@@ -1,0 +1,20 @@
+{
+  "name": "virtual-arena-prototype",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Real-time virtual basketball arena background using MediaPipe + WebGL2",
+  "scripts": {
+    "setup": "node setup.mjs",
+    "start": "node setup.mjs && serve docs -l 8123 --no-clipboard"
+  },
+  "dependencies": {
+    "@mediapipe/tasks-vision": "^0.10.34"
+  },
+  "devDependencies": {
+    "serve": "^14.2.4"
+  },
+  "engines": {
+    "node": ">=18"
+  }
+}
