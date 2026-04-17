@@ -1,0 +1,118 @@
+:root { color-scheme: dark; }
+html, body {
+  margin: 0; padding: 0; height: 100%;
+  background: #000; color: #eee; overflow: hidden;
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+}
+#stage {
+  position: fixed; inset: 0;
+  display: flex; align-items: center; justify-content: center;
+}
+#gl {
+  max-width: 100vw; max-height: 100vh;
+  aspect-ratio: 16 / 9; width: 100%;
+  background: #111;
+}
+#video { display: none; }
+#hud {
+  position: fixed; top: 8px; left: 8px; z-index: 10;
+  display: flex; flex-direction: column; gap: 2px;
+}
+#hud > div {
+  padding: 4px 10px; background: rgba(0,0,0,0.65);
+  font: 12px/1.4 ui-monospace, Menlo, monospace;
+  font-variant-numeric: tabular-nums;
+  border-radius: 4px;
+}
+#status {
+  position: fixed; top: 8px; right: 8px;
+  padding: 8px 12px; background: rgba(200, 30, 30, 0.85);
+  font-size: 12px; border-radius: 4px; z-index: 10;
+  display: none; max-width: 50vw;
+}
+#controls {
+  position: fixed; bottom: 16px; left: 50%;
+  transform: translateX(-50%);
+  display: flex; gap: 14px; align-items: stretch;
+  padding: 12px 16px; background: rgba(0,0,0,0.65);
+  border-radius: 8px; z-index: 10; font-size: 13px;
+  max-width: calc(100vw - 16px);
+}
+#controls .group {
+  display: flex; flex-direction: column; gap: 8px;
+  justify-content: center;
+}
+#controls label { display: flex; align-items: center; gap: 6px; }
+#controls .divider {
+  width: 1px; align-self: stretch;
+  background: rgba(255,255,255,0.18);
+}
+button, select, input { font: inherit; color: inherit; }
+button {
+  padding: 6px 14px; background: #2a7; border: 0;
+  border-radius: 4px; cursor: pointer; color: #fff;
+}
+button:disabled { opacity: 0.5; cursor: not-allowed; }
+button.stop { background: #c43; }
+select { background: #222; color: #eee; border: 1px solid #444; padding: 4px 6px; border-radius: 4px; }
+#featherVal { width: 2em; text-align: right; font-variant-numeric: tabular-nums; }
+.upload-btn {
+  padding: 6px 14px; background: #357; border-radius: 4px;
+  color: #fff; cursor: pointer; user-select: none;
+}
+.upload-btn:hover { background: #468; }
+
+/* Preload overlay: covers everything while we fetch models + arenas. */
+#preload {
+  position: fixed; inset: 0; z-index: 100;
+  background: #000;
+  display: flex; flex-direction: column;
+  align-items: center; justify-content: center;
+  transition: opacity 0.4s ease-out;
+}
+#preload.done { opacity: 0; pointer-events: none; }
+#preload .title { font-size: 18px; font-weight: 600; margin-bottom: 6px; }
+#preload .sub {
+  font-size: 13px; color: #999; margin-bottom: 20px;
+  min-height: 1em;
+}
+#preload .bar-wrap {
+  width: min(420px, 80vw); height: 6px;
+  background: #222; border-radius: 3px; overflow: hidden;
+}
+#preload .bar {
+  height: 100%;
+  background: linear-gradient(90deg, #2a7, #4bd);
+  width: 0%; transition: width 0.15s linear;
+}
+#preload .progress-label {
+  margin-top: 8px;
+  font: 12px/1.4 ui-monospace, Menlo, monospace;
+  color: #bbb; font-variant-numeric: tabular-nums;
+}
+#preload .cta {
+  margin-top: 22px; font-size: 14px; color: #7d7;
+  min-height: 1em;
+}
+
+@keyframes pulse {
+  0%, 100% { box-shadow: 0 0 0 0 rgba(42, 170, 119, 0.7); }
+  50%      { box-shadow: 0 0 0 10px rgba(42, 170, 119, 0); }
+}
+button.pulse { animation: pulse 1.6s ease-out infinite; }
+
+/* Foam finger overlay: absolutely-positioned imgs over the stage.
+   pointer-events:none so controls remain clickable. */
+#foam-layer {
+  position: fixed; inset: 0;
+  pointer-events: none; overflow: hidden;
+  z-index: 5;
+}
+.foam {
+  position: absolute; left: 0; top: 0;
+  width: 100px; height: 180px;
+  transform-origin: 50% 92%;
+  will-change: transform;
+  user-select: none;
+  filter: drop-shadow(0 3px 4px rgba(0,0,0,0.5));
+}

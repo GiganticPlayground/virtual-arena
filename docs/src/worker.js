@@ -14,7 +14,7 @@ self.import = async (url) => {
   (0, eval)(src); // indirect eval → global scope
 };
 
-import { FilesetResolver, ImageSegmenter, HandLandmarker } from './vision/vision_bundle.mjs';
+import { FilesetResolver, ImageSegmenter, HandLandmarker } from '../vision/vision_bundle.mjs';
 
 let segmenter      = null;
 let handLandmarker = null;

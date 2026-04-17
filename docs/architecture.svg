@@ -1,0 +1,234 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1280 860" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif">
+  <defs>
+    <marker id="arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="8" markerHeight="8" orient="auto-start-reverse">
+      <path d="M 0 0 L 10 5 L 0 10 z" fill="#3b82f6"/>
+    </marker>
+    <marker id="arrowReturn" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="8" markerHeight="8" orient="auto-start-reverse">
+      <path d="M 0 0 L 10 5 L 0 10 z" fill="#f59e0b"/>
+    </marker>
+    <marker id="arrowStatic" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="8" markerHeight="8" orient="auto-start-reverse">
+      <path d="M 0 0 L 10 5 L 0 10 z" fill="#6b7280"/>
+    </marker>
+    <filter id="shadow" x="-10%" y="-10%" width="120%" height="120%">
+      <feDropShadow dx="0" dy="2" stdDeviation="3" flood-opacity="0.15"/>
+    </filter>
+  </defs>
+
+  <rect width="1280" height="860" fill="#f8fafc"/>
+
+  <!-- Title -->
+  <text x="640" y="38" text-anchor="middle" font-size="22" font-weight="700" fill="#0f172a">
+    Virtual Arena Prototype — Data Flow
+  </text>
+  <text x="640" y="60" text-anchor="middle" font-size="13" fill="#475569">
+    Real-time webcam segmentation + hand tracking, composited over an arena background via WebGL2
+  </text>
+
+  <!-- Setup (offline) lane -->
+  <rect x="30" y="90" width="1220" height="130" rx="10" fill="#fef3c7" stroke="#f59e0b" stroke-width="1.5"/>
+  <text x="50" y="113" font-size="13" font-weight="700" fill="#92400e">BUILD-TIME  ·  setup.mjs  (node)</text>
+  <text x="50" y="131" font-size="11" fill="#78350f">One-time: downloads MediaPipe models, copies tasks-vision bundle + wasm into docs/ so runtime is offline.</text>
+
+  <!-- Node assets boxes -->
+  <g filter="url(#shadow)">
+    <rect x="60" y="150" width="220" height="55" rx="6" fill="#fff7ed" stroke="#f97316"/>
+    <text x="170" y="170" text-anchor="middle" font-size="12" font-weight="600" fill="#7c2d12">MediaPipe CDN</text>
+    <text x="170" y="188" text-anchor="middle" font-size="10" fill="#9a3412">selfie_multiclass_256x256.tflite</text>
+    <text x="170" y="200" text-anchor="middle" font-size="10" fill="#9a3412">hand_landmarker.task</text>
+  </g>
+  <g filter="url(#shadow)">
+    <rect x="320" y="150" width="220" height="55" rx="6" fill="#fff7ed" stroke="#f97316"/>
+    <text x="430" y="170" text-anchor="middle" font-size="12" font-weight="600" fill="#7c2d12">npm: @mediapipe/tasks-vision</text>
+    <text x="430" y="188" text-anchor="middle" font-size="10" fill="#9a3412">vision_bundle.mjs</text>
+    <text x="430" y="200" text-anchor="middle" font-size="10" fill="#9a3412">wasm/ runtime</text>
+  </g>
+  <g filter="url(#shadow)">
+    <rect x="740" y="150" width="220" height="55" rx="6" fill="#ecfdf5" stroke="#10b981"/>
+    <text x="850" y="170" text-anchor="middle" font-size="12" font-weight="600" fill="#065f46">docs/  (static site)</text>
+    <text x="850" y="188" text-anchor="middle" font-size="10" fill="#047857">models/, vision/, arenas/,</text>
+    <text x="850" y="200" text-anchor="middle" font-size="10" fill="#047857">index.html, worker.js</text>
+  </g>
+  <g filter="url(#shadow)">
+    <rect x="1000" y="150" width="220" height="55" rx="6" fill="#ecfdf5" stroke="#10b981"/>
+    <text x="1110" y="170" text-anchor="middle" font-size="12" font-weight="600" fill="#065f46">GitHub Pages / `serve`</text>
+    <text x="1110" y="188" text-anchor="middle" font-size="10" fill="#047857">main/docs → localhost:8123</text>
+    <text x="1110" y="200" text-anchor="middle" font-size="10" fill="#047857">zero external runtime requests</text>
+  </g>
+  <line x1="280" y1="177" x2="320" y2="177" stroke="#6b7280" stroke-width="1.5" marker-end="url(#arrowStatic)"/>
+  <line x1="540" y1="177" x2="740" y2="177" stroke="#6b7280" stroke-width="1.5" marker-end="url(#arrowStatic)"/>
+  <line x1="960" y1="177" x2="1000" y2="177" stroke="#6b7280" stroke-width="1.5" marker-end="url(#arrowStatic)"/>
+
+  <!-- RUNTIME BROWSER -->
+  <rect x="30" y="240" width="1220" height="590" rx="10" fill="#eef2ff" stroke="#6366f1" stroke-width="1.5"/>
+  <text x="50" y="263" font-size="13" font-weight="700" fill="#3730a3">RUNTIME  ·  Chrome desktop  ·  index.html</text>
+
+  <!-- Main thread lane -->
+  <rect x="50" y="280" width="740" height="530" rx="8" fill="#ffffff" stroke="#c7d2fe"/>
+  <text x="70" y="302" font-size="12" font-weight="700" fill="#4338ca">MAIN THREAD</text>
+
+  <!-- Inputs -->
+  <g filter="url(#shadow)">
+    <rect x="80" y="320" width="200" height="70" rx="6" fill="#dbeafe" stroke="#3b82f6"/>
+    <text x="180" y="342" text-anchor="middle" font-size="12" font-weight="700" fill="#1e3a8a">Webcam</text>
+    <text x="180" y="360" text-anchor="middle" font-size="10" fill="#1e40af">getUserMedia({ video })</text>
+    <text x="180" y="374" text-anchor="middle" font-size="10" fill="#1e40af">→ &lt;video&gt; element</text>
+  </g>
+
+  <g filter="url(#shadow)">
+    <rect x="310" y="320" width="200" height="70" rx="6" fill="#dbeafe" stroke="#3b82f6"/>
+    <text x="410" y="342" text-anchor="middle" font-size="12" font-weight="700" fill="#1e3a8a">Arena Background</text>
+    <text x="410" y="360" text-anchor="middle" font-size="10" fill="#1e40af">./arenas/*.png|jpg</text>
+    <text x="410" y="374" text-anchor="middle" font-size="10" fill="#1e40af">uploaded by user</text>
+  </g>
+
+  <g filter="url(#shadow)">
+    <rect x="540" y="320" width="220" height="70" rx="6" fill="#dbeafe" stroke="#3b82f6"/>
+    <text x="650" y="342" text-anchor="middle" font-size="12" font-weight="700" fill="#1e3a8a">UI Controls</text>
+    <text x="650" y="360" text-anchor="middle" font-size="10" fill="#1e40af">arena, feather, infer-rate,</text>
+    <text x="650" y="374" text-anchor="middle" font-size="10" fill="#1e40af">hands on/off, mirror</text>
+  </g>
+
+  <!-- Capture loop -->
+  <g filter="url(#shadow)">
+    <rect x="80" y="410" width="430" height="80" rx="6" fill="#e0e7ff" stroke="#6366f1"/>
+    <text x="295" y="432" text-anchor="middle" font-size="12" font-weight="700" fill="#3730a3">Frame Capture Loop  (requestAnimationFrame)</text>
+    <text x="295" y="452" text-anchor="middle" font-size="10" fill="#4338ca">new VideoFrame(video)  —or—  createImageBitmap(video)</text>
+    <text x="295" y="468" text-anchor="middle" font-size="10" fill="#4338ca">throttle to infer-rate; transfer ownership to worker</text>
+    <text x="295" y="482" text-anchor="middle" font-size="10" fill="#4338ca">must frame.close() to avoid decoder back-pressure</text>
+  </g>
+
+  <!-- Mask cache -->
+  <g filter="url(#shadow)">
+    <rect x="540" y="410" width="220" height="80" rx="6" fill="#fef3c7" stroke="#f59e0b"/>
+    <text x="650" y="432" text-anchor="middle" font-size="12" font-weight="700" fill="#92400e">Latest Mask Cache</text>
+    <text x="650" y="452" text-anchor="middle" font-size="10" fill="#78350f">last Uint8Array mask (256×256)</text>
+    <text x="650" y="468" text-anchor="middle" font-size="10" fill="#78350f">+ hand landmarks[]</text>
+    <text x="650" y="482" text-anchor="middle" font-size="10" fill="#78350f">reused across RAF ticks</text>
+  </g>
+
+  <!-- WebGL composite -->
+  <g filter="url(#shadow)">
+    <rect x="80" y="515" width="680" height="150" rx="6" fill="#f5f3ff" stroke="#8b5cf6"/>
+    <text x="420" y="538" text-anchor="middle" font-size="13" font-weight="700" fill="#5b21b6">WebGL2 Composite Pass  (fragment shader)</text>
+
+    <rect x="100" y="555" width="155" height="90" rx="4" fill="#ede9fe" stroke="#8b5cf6"/>
+    <text x="177" y="573" text-anchor="middle" font-size="11" font-weight="600" fill="#5b21b6">u_bg</text>
+    <text x="177" y="590" text-anchor="middle" font-size="10" fill="#6d28d9">arena texture</text>
+    <text x="177" y="605" text-anchor="middle" font-size="9" fill="#7c3aed">cover-fit UVs</text>
+    <text x="177" y="620" text-anchor="middle" font-size="9" fill="#7c3aed">(scale + offset)</text>
+
+    <rect x="275" y="555" width="155" height="90" rx="4" fill="#ede9fe" stroke="#8b5cf6"/>
+    <text x="352" y="573" text-anchor="middle" font-size="11" font-weight="600" fill="#5b21b6">u_cam</text>
+    <text x="352" y="590" text-anchor="middle" font-size="10" fill="#6d28d9">video texture</text>
+    <text x="352" y="605" text-anchor="middle" font-size="9" fill="#7c3aed">mirror flip</text>
+    <text x="352" y="620" text-anchor="middle" font-size="9" fill="#7c3aed">(u_mirror)</text>
+
+    <rect x="450" y="555" width="155" height="90" rx="4" fill="#ede9fe" stroke="#8b5cf6"/>
+    <text x="527" y="573" text-anchor="middle" font-size="11" font-weight="600" fill="#5b21b6">u_mask</text>
+    <text x="527" y="590" text-anchor="middle" font-size="10" fill="#6d28d9">category mask</text>
+    <text x="527" y="605" text-anchor="middle" font-size="9" fill="#7c3aed">3×3 average</text>
+    <text x="527" y="620" text-anchor="middle" font-size="9" fill="#7c3aed">+ smoothstep feather</text>
+
+    <rect x="625" y="555" width="120" height="90" rx="4" fill="#fce7f3" stroke="#ec4899"/>
+    <text x="685" y="575" text-anchor="middle" font-size="11" font-weight="700" fill="#9d174d">mix()</text>
+    <text x="685" y="594" text-anchor="middle" font-size="9" fill="#be185d">bg vs. cam</text>
+    <text x="685" y="608" text-anchor="middle" font-size="9" fill="#be185d">by soft alpha</text>
+    <text x="685" y="625" text-anchor="middle" font-size="9" fill="#be185d">→ gl_FragColor</text>
+  </g>
+
+  <!-- Foam fingers overlay -->
+  <g filter="url(#shadow)">
+    <rect x="80" y="685" width="430" height="65" rx="6" fill="#ffe4e6" stroke="#f43f5e"/>
+    <text x="295" y="706" text-anchor="middle" font-size="12" font-weight="700" fill="#9f1239">Foam-Finger Overlay (DOM layer)</text>
+    <text x="295" y="724" text-anchor="middle" font-size="10" fill="#be123c">positioned &lt;img&gt;s driven by hand landmarks</text>
+    <text x="295" y="738" text-anchor="middle" font-size="10" fill="#be123c">pointer-events: none, z-index: 5</text>
+  </g>
+
+  <!-- Canvas output -->
+  <g filter="url(#shadow)">
+    <rect x="540" y="685" width="220" height="65" rx="6" fill="#dcfce7" stroke="#22c55e"/>
+    <text x="650" y="706" text-anchor="middle" font-size="12" font-weight="700" fill="#14532d">&lt;canvas id="gl"&gt;</text>
+    <text x="650" y="724" text-anchor="middle" font-size="10" fill="#166534">1280 × 720, 16:9 stage</text>
+    <text x="650" y="738" text-anchor="middle" font-size="10" fill="#166534">rendered every RAF tick</text>
+  </g>
+
+  <!-- Worker lane -->
+  <rect x="810" y="280" width="420" height="530" rx="8" fill="#ffffff" stroke="#c4b5fd"/>
+  <text x="830" y="302" font-size="12" font-weight="700" fill="#6d28d9">INFERENCE WORKER  ·  worker.js</text>
+
+  <g filter="url(#shadow)">
+    <rect x="830" y="320" width="380" height="80" rx="6" fill="#f5f3ff" stroke="#8b5cf6"/>
+    <text x="1020" y="342" text-anchor="middle" font-size="12" font-weight="700" fill="#5b21b6">init</text>
+    <text x="1020" y="360" text-anchor="middle" font-size="10" fill="#6d28d9">FilesetResolver.forVisionTasks(wasmBaseUrl)</text>
+    <text x="1020" y="374" text-anchor="middle" font-size="10" fill="#6d28d9">ImageSegmenter + HandLandmarker  (GPU delegate)</text>
+    <text x="1020" y="388" text-anchor="middle" font-size="10" fill="#6d28d9">self.import shim so UMD wasm loader works</text>
+  </g>
+
+  <g filter="url(#shadow)">
+    <rect x="830" y="420" width="380" height="90" rx="6" fill="#ede9fe" stroke="#7c3aed"/>
+    <text x="1020" y="442" text-anchor="middle" font-size="12" font-weight="700" fill="#5b21b6">onmessage "infer"</text>
+    <text x="1020" y="460" text-anchor="middle" font-size="10" fill="#6d28d9">segmenter.segmentForVideo(frame, ts)</text>
+    <text x="1020" y="474" text-anchor="middle" font-size="10" fill="#6d28d9">→ categoryMask.getAsUint8Array()</text>
+    <text x="1020" y="488" text-anchor="middle" font-size="10" fill="#6d28d9">handLandmarker.detectForVideo(frame, ts)</text>
+    <text x="1020" y="502" text-anchor="middle" font-size="10" fill="#6d28d9">frame.close()  (critical)</text>
+  </g>
+
+  <g filter="url(#shadow)">
+    <rect x="830" y="530" width="380" height="65" rx="6" fill="#fef3c7" stroke="#f59e0b"/>
+    <text x="1020" y="552" text-anchor="middle" font-size="12" font-weight="700" fill="#92400e">postMessage "result"</text>
+    <text x="1020" y="570" text-anchor="middle" font-size="10" fill="#78350f">{ ts, mask, maskW, maskH, landmarks }</text>
+    <text x="1020" y="584" text-anchor="middle" font-size="10" fill="#78350f">mask.buffer transferred (zero-copy)</text>
+  </g>
+
+  <!-- Models in worker -->
+  <g filter="url(#shadow)">
+    <rect x="830" y="615" width="180" height="80" rx="6" fill="#fef9c3" stroke="#eab308"/>
+    <text x="920" y="636" text-anchor="middle" font-size="11" font-weight="700" fill="#854d0e">selfie_multiclass</text>
+    <text x="920" y="652" text-anchor="middle" font-size="9" fill="#a16207">256×256 .tflite</text>
+    <text x="920" y="666" text-anchor="middle" font-size="9" fill="#a16207">segments person/bg</text>
+    <text x="920" y="682" text-anchor="middle" font-size="9" fill="#a16207">category mask (uint8)</text>
+  </g>
+
+  <g filter="url(#shadow)">
+    <rect x="1030" y="615" width="180" height="80" rx="6" fill="#fef9c3" stroke="#eab308"/>
+    <text x="1120" y="636" text-anchor="middle" font-size="11" font-weight="700" fill="#854d0e">hand_landmarker</text>
+    <text x="1120" y="652" text-anchor="middle" font-size="9" fill="#a16207">.task float16</text>
+    <text x="1120" y="666" text-anchor="middle" font-size="9" fill="#a16207">up to 4 hands</text>
+    <text x="1120" y="682" text-anchor="middle" font-size="9" fill="#a16207">21 landmarks each</text>
+  </g>
+
+  <line x1="920" y1="615" x2="960" y2="510" stroke="#eab308" stroke-width="1" stroke-dasharray="4 3"/>
+  <line x1="1120" y1="615" x2="1080" y2="510" stroke="#eab308" stroke-width="1" stroke-dasharray="4 3"/>
+
+  <!-- MAIN → WORKER arrows -->
+  <line x1="510" y1="450" x2="830" y2="450" stroke="#3b82f6" stroke-width="2" marker-end="url(#arrow)"/>
+  <text x="670" y="442" text-anchor="middle" font-size="10" font-weight="600" fill="#1d4ed8">postMessage "infer" { frame, ts }</text>
+
+  <!-- WORKER → MAIN arrow -->
+  <line x1="830" y1="560" x2="760" y2="560" stroke="#f59e0b" stroke-width="2" marker-end="url(#arrowReturn)"/>
+  <line x1="760" y1="560" x2="760" y2="470" stroke="#f59e0b" stroke-width="2"/>
+  <line x1="760" y1="470" x2="762" y2="450" stroke="#f59e0b" stroke-width="2" marker-end="url(#arrowReturn)"/>
+  <text x="795" y="555" text-anchor="middle" font-size="10" font-weight="600" fill="#b45309">result</text>
+
+  <!-- Internal arrows main -->
+  <line x1="180" y1="390" x2="180" y2="410" stroke="#3b82f6" stroke-width="1.5" marker-end="url(#arrow)"/>
+  <line x1="295" y1="490" x2="295" y2="515" stroke="#8b5cf6" stroke-width="1.5" marker-end="url(#arrow)"/>
+  <line x1="650" y1="490" x2="650" y2="515" stroke="#8b5cf6" stroke-width="1.5" marker-end="url(#arrow)"/>
+  <line x1="410" y1="390" x2="410" y2="515" stroke="#8b5cf6" stroke-width="1.5" marker-end="url(#arrow)"/>
+  <line x1="420" y1="665" x2="420" y2="685" stroke="#8b5cf6" stroke-width="1.5" marker-end="url(#arrow)"/>
+  <line x1="650" y1="665" x2="650" y2="685" stroke="#22c55e" stroke-width="1.5" marker-end="url(#arrow)"/>
+  <line x1="510" y1="717" x2="540" y2="717" stroke="#f43f5e" stroke-width="1.5" marker-end="url(#arrow)"/>
+
+  <!-- Legend -->
+  <g transform="translate(50, 832)">
+    <rect x="0" y="-12" width="16" height="3" fill="#3b82f6"/>
+    <text x="22" y="-7" font-size="11" fill="#334155">main → worker (frame)</text>
+    <rect x="170" y="-12" width="16" height="3" fill="#f59e0b"/>
+    <text x="192" y="-7" font-size="11" fill="#334155">worker → main (mask + landmarks)</text>
+    <rect x="410" y="-12" width="16" height="3" fill="#8b5cf6"/>
+    <text x="432" y="-7" font-size="11" fill="#334155">GPU sampling</text>
+    <rect x="530" y="-12" width="16" height="3" fill="#6b7280"/>
+    <text x="552" y="-7" font-size="11" fill="#334155">build-time asset copy</text>
+  </g>
+</svg>

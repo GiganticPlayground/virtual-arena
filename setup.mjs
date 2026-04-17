@@ -13,11 +13,8 @@ import { fileURLToPath } from 'node:url';
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const PUB = join(__dirname, 'docs');
 
-const ARENAS = [
-  { name: 'arena-wide.jpg',   url: 'https://images.unsplash.com/photo-1504450758481-7338eba7524a?auto=format&fit=crop&w=1920&q=80' },
-  { name: 'court-low.jpg',    url: 'https://images.unsplash.com/photo-1546519638-68e109498ffc?auto=format&fit=crop&w=1920&q=80' },
-  { name: 'crowd-lights.jpg', url: 'https://images.unsplash.com/photo-1518091043644-c1d4457512c6?auto=format&fit=crop&w=1920&q=80' },
-];
+// Arena background images are committed under docs/arenas/ directly — no
+// downloads needed. The app reads them via the ARENAS array in index.html.
 
 const MODELS = [
   {
@@ -58,21 +55,15 @@ async function copyIfMissing(src, dst, label) {
 }
 
 async function main() {
-  await mkdir(join(PUB, 'arenas'), { recursive: true });
   await mkdir(join(PUB, 'models'), { recursive: true });
   await mkdir(join(PUB, 'vision'), { recursive: true });
 
-  console.log('[1/3] Arena images (Unsplash)');
-  for (const a of ARENAS) {
-    await download(a.url, join(PUB, 'arenas', a.name));
-  }
-
-  console.log('[2/3] MediaPipe models');
+  console.log('[1/2] MediaPipe models');
   for (const m of MODELS) {
     await download(m.url, join(PUB, 'models', m.name));
   }
 
-  console.log('[3/3] MediaPipe tasks-vision bundle + wasm');
+  console.log('[2/2] MediaPipe tasks-vision bundle + wasm');
   const pkg = join(__dirname, 'node_modules', '@mediapipe', 'tasks-vision');
   if (!(await exists(pkg))) {
     throw new Error('node_modules/@mediapipe/tasks-vision missing — run `npm install` first.');
