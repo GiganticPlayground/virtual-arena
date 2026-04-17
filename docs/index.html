@@ -178,6 +178,11 @@
       <input id="feather" type="range" min="0" max="5" step="0.1" value="1.5">
       <span id="featherVal">1.5</span>
     </label>
+    <label title="Rate at which segmentation + hand tracking run. Lower = more headroom, higher = less mask lag.">
+      Inference
+      <input id="infRate" type="range" min="5" max="60" step="5" value="30">
+      <span id="infRateVal">30</span>&nbsp;Hz
+    </label>
     <label>
       <input id="mirror" type="checkbox" checked>
       Mirror
@@ -235,6 +240,12 @@ const mirrorInput  = document.getElementById('mirror');
 const uploadInput  = document.getElementById('upload');
 const foamToggle   = document.getElementById('foam');
 const foamLayer    = document.getElementById('foam-layer');
+const infRateInput = document.getElementById('infRate');
+const infRateVal   = document.getElementById('infRateVal');
+
+infRateInput.addEventListener('input', () => {
+  infRateVal.textContent = infRateInput.value;
+});
 
 function showError(msg) {
   console.error(msg);
@@ -510,6 +521,10 @@ let lastFrame = performance.now();
 let fpsAcc    = 0, fpsFrames = 0;
 let lowWarned = false;
 
+// Decouple inference rate from render rate. Inference Hz is user-tunable
+// via the slider; the compositor still draws every rAF tick regardless.
+let lastInferenceMs = -Infinity;
+
 function loop() {
   if (!running) return;
   rafId = requestAnimationFrame(loop);
@@ -539,8 +554,14 @@ function loop() {
   gl.pixelStorei(gl.UNPACK_ALIGNMENT, 4);
   gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGB, gl.RGB, gl.UNSIGNED_BYTE, video);
 
+  // Rate-limit both inferences to the user-selected Hz. On skipped frames,
+  // the mask texture still holds last tick's data and foam fingers stay at
+  // their last transforms. Compositor still draws every rAF tick.
+  const runInference = (now - lastInferenceMs) >= (1000 / +infRateInput.value);
+  if (runInference) lastInferenceMs = now;
+
   // 2. Run segmentation and upload the category mask (one byte per pixel).
-  try {
+  if (runInference) try {
     segmenter.segmentForVideo(video, now, (result) => {
       const cm = result.categoryMask;
       if (cm) {
@@ -562,7 +583,7 @@ function loop() {
   // 2b. Optional: hand tracking → position foam finger overlays. The hand
   //     landmarker operates on the raw (unmirrored) video, so we flip X
   //     when mirror is on to match what the user sees.
-  if (foamToggle.checked && handLandmarker) {
+  if (runInference && foamToggle.checked && handLandmarker) {
     let hands = [];
     try {
       const r = handLandmarker.detectForVideo(video, now);
