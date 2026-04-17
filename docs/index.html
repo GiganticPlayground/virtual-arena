@@ -71,12 +71,20 @@
   #controls {
     position: fixed; bottom: 16px; left: 50%;
     transform: translateX(-50%);
-    display: flex; gap: 14px; align-items: center;
-    padding: 10px 14px; background: rgba(0,0,0,0.65);
+    display: flex; gap: 14px; align-items: stretch;
+    padding: 12px 16px; background: rgba(0,0,0,0.65);
     border-radius: 8px; z-index: 10; font-size: 13px;
-    flex-wrap: wrap; max-width: calc(100vw - 16px);
+    max-width: calc(100vw - 16px);
+  }
+  #controls .group {
+    display: flex; flex-direction: column; gap: 8px;
+    justify-content: center;
   }
   #controls label { display: flex; align-items: center; gap: 6px; }
+  #controls .divider {
+    width: 1px; align-self: stretch;
+    background: rgba(255,255,255,0.18);
+  }
   button, select, input { font: inherit; color: inherit; }
   button {
     padding: 6px 14px; background: #2a7; border: 0;
@@ -164,38 +172,55 @@
   <div id="fps">FPS —</div>
   <div id="status"></div>
   <div id="controls">
-    <button id="toggle" disabled>Start</button>
-    <label>
-      Arena
-      <select id="arena"></select>
-    </label>
-    <label class="upload-btn" title="Upload your own background image">
-      Upload
-      <input id="upload" type="file" accept="image/*" hidden>
-    </label>
-    <label>
-      Feather
-      <input id="feather" type="range" min="0" max="5" step="0.1" value="1.5">
-      <span id="featherVal">1.5</span>
-    </label>
-    <label title="Rate at which segmentation + hand tracking run. Lower = more headroom, higher = less mask lag.">
-      Inference
-      <input id="infRate" type="range" min="5" max="60" step="5" value="30">
-      <span id="infRateVal">30</span>&nbsp;Hz
-    </label>
-    <label>
-      <input id="mirror" type="checkbox" checked>
-      Mirror
-    </label>
-    <label>
-      <input id="foam" type="checkbox">
-      Foam Finger
-    </label>
+    <div class="group">
+      <button id="toggle" disabled>Start</button>
+      <label>
+        Source
+        <select id="source">
+          <option value="webcam">Webcam</option>
+          <option value="./input_videos/1.mp4">Video 1</option>
+          <option value="./input_videos/2.mp4">Video 2</option>
+        </select>
+      </label>
+    </div>
+    <span class="divider"></span>
+    <div class="group">
+      <label>
+        Background
+        <select id="arena"></select>
+      </label>
+      <label class="upload-btn" title="Upload your own background image">
+        Upload
+        <input id="upload" type="file" accept="image/*" hidden>
+      </label>
+      <label>
+        Feather
+        <input id="feather" type="range" min="0" max="5" step="0.1" value="1.5">
+        <span id="featherVal">1.5</span>
+      </label>
+    </div>
+    <span class="divider"></span>
+    <div class="group">
+      <label>
+        <input id="mirror" type="checkbox" checked>
+        Mirror
+      </label>
+      <label>
+        <input id="foam" type="checkbox">
+        Foam Finger
+      </label>
+      <label title="Rate at which segmentation + hand tracking run. Lower = more headroom, higher = less mask lag.">
+        Inference
+        <input id="infRate" type="range" min="5" max="60" step="5" value="30">
+        <span id="infRateVal">30</span>&nbsp;Hz
+      </label>
+    </div>
   </div>
 
 <script type="module">
-// Local MediaPipe bundle (copied from node_modules by setup.mjs).
-import { FilesetResolver, ImageSegmenter, HandLandmarker } from './vision/vision_bundle.mjs';
+// MediaPipe runs inside ./worker.js (imported there). The main thread
+// never loads the vision bundle directly — it only talks to the worker
+// via postMessage.
 
 // ---- Config ------------------------------------------------------------
 // Local arena images. Drop new .jpg/.png in docs/arenas/ and add here.
@@ -242,6 +267,7 @@ const foamToggle   = document.getElementById('foam');
 const foamLayer    = document.getElementById('foam-layer');
 const infRateInput = document.getElementById('infRate');
 const infRateVal   = document.getElementById('infRateVal');
+const sourceSel    = document.getElementById('source');
 
 infRateInput.addEventListener('input', () => {
   infRateVal.textContent = infRateInput.value;
@@ -428,12 +454,47 @@ uploadInput.addEventListener('change', async (e) => {
   catch (err) { showError('Failed to load uploaded image: ' + err.message); }
 });
 
-// ---- MediaPipe + webcam lifecycle --------------------------------------
-let segmenter     = null;
-let handLandmarker = null;
-let stream        = null;
-let running       = false;
-let rafId         = 0;
+// ---- Inference worker + webcam lifecycle ------------------------------
+// MediaPipe lives in ./worker.js. The main thread posts frames and
+// receives mask + hand landmarks.
+const worker = new Worker(new URL('./worker.js', import.meta.url), { type: 'module' });
+let workerReady   = false;
+let workerBusy    = false;   // one-in-flight gate
+let workerBroken  = false;   // latched on init/runtime errors
+let lastLandmarks = [];      // most recent hands; applied to DOM every rAF tick
+let workerReadyResolve;
+const workerReadyPromise = new Promise(r => { workerReadyResolve = r; });
+
+worker.addEventListener('message', (e) => {
+  const m = e.data;
+  if (m.type === 'ready') {
+    workerReady = true;
+    workerReadyResolve();
+  } else if (m.type === 'result') {
+    workerBusy = false;
+    if (m.mask) {
+      gl.bindTexture(gl.TEXTURE_2D, maskTex);
+      gl.pixelStorei(gl.UNPACK_FLIP_Y_WEBGL, true);
+      gl.pixelStorei(gl.UNPACK_ALIGNMENT, 1);
+      gl.texImage2D(gl.TEXTURE_2D, 0, gl.R8, m.maskW, m.maskH, 0, gl.RED, gl.UNSIGNED_BYTE, m.mask);
+      gl.uniform2f(uMaskSize, m.maskW, m.maskH);
+    }
+    lastLandmarks = m.landmarks || [];
+  } else if (m.type === 'error') {
+    workerBusy = false;
+    if (m.stage === 'init') workerBroken = true;
+    showError(`Worker ${m.stage}: ${m.message}`);
+    console.error('[worker]', m.stage, m.message, m.stack);
+  }
+});
+worker.addEventListener('error', (e) => {
+  workerBroken = true;
+  showError('Worker crashed: ' + (e.message || 'unknown'));
+});
+
+let stream  = null;
+let running = false;
+let rafId   = 0;
 
 // Cache of canvas bounding rect for mapping normalized landmark coords to
 // viewport pixels. Refreshed on resize.
@@ -465,32 +526,65 @@ foamToggle.addEventListener('change', () => {
   if (!foamToggle.checked) hideFoamFrom(0);
 });
 
-async function startCamera() {
-  try {
-    stream = await navigator.mediaDevices.getUserMedia({
-      video: {
-        width:  { ideal: 1280 },
-        height: { ideal: 720 },
-        facingMode: 'user',
-      },
-      audio: false,
-    });
-  } catch (e) {
-    showError('Webcam unavailable or permission denied. Allow camera access and retry.');
-    throw e;
-  }
-  video.srcObject = stream;
-  await new Promise(res => video.addEventListener('loadedmetadata', res, { once: true }));
-  await video.play();
-}
-
-function stop() {
-  running = false;
-  cancelAnimationFrame(rafId);
+// Detaches whatever the video element is currently playing (webcam stream
+// or a looped file). Safe to call when nothing is attached.
+function teardownSource() {
   if (stream) {
     for (const t of stream.getTracks()) t.stop();
     stream = null;
   }
+  video.srcObject = null;
+  video.removeAttribute('src');
+  video.load();
+  video.loop = false;
+}
+
+async function startSource() {
+  teardownSource();
+  const src = sourceSel.value;
+  if (src === 'webcam') {
+    try {
+      stream = await navigator.mediaDevices.getUserMedia({
+        video: {
+          width:  { ideal: 1280 },
+          height: { ideal: 720 },
+          facingMode: 'user',
+        },
+        audio: false,
+      });
+    } catch (e) {
+      showError('Webcam unavailable or permission denied. Allow camera access and retry.');
+      throw e;
+    }
+    video.srcObject = stream;
+  } else {
+    // Looped file playback. Muted + autoplay-friendly because the <video>
+    // already has the `muted` attribute set in HTML.
+    video.src = src;
+    video.loop = true;
+  }
+  await new Promise((res, rej) => {
+    video.addEventListener('loadedmetadata', res, { once: true });
+    video.addEventListener('error', () =>
+      rej(new Error(`Failed to load video source: ${src}`)), { once: true });
+  });
+  await video.play();
+}
+
+// Live source swap: if the user picks a new source while running, re-init.
+sourceSel.addEventListener('change', async () => {
+  if (!running) return;
+  toggleBtn.disabled = true;
+  try { await startSource(); }
+  catch (e) { showError(e.message); stop(); }
+  finally { toggleBtn.disabled = false; }
+});
+
+function stop() {
+  running = false;
+  cancelAnimationFrame(rafId);
+  teardownSource();
+  lastLandmarks = [];
   hideFoamFrom(0);
   toggleBtn.textContent = 'Start';
   toggleBtn.classList.remove('stop');
@@ -501,7 +595,7 @@ async function start() {
   toggleBtn.disabled = true;
   toggleBtn.classList.remove('pulse');
   try {
-    await startCamera();
+    await startSource();
     running = true;
     toggleBtn.textContent = 'Stop';
     toggleBtn.classList.add('stop');
@@ -557,40 +651,45 @@ function loop() {
   // Rate-limit both inferences to the user-selected Hz. On skipped frames,
   // the mask texture still holds last tick's data and foam fingers stay at
   // their last transforms. Compositor still draws every rAF tick.
-  const runInference = (now - lastInferenceMs) >= (1000 / +infRateInput.value);
-  if (runInference) lastInferenceMs = now;
-
-  // 2. Run segmentation and upload the category mask (one byte per pixel).
-  if (runInference) try {
-    segmenter.segmentForVideo(video, now, (result) => {
-      const cm = result.categoryMask;
-      if (cm) {
-        const w = cm.width, h = cm.height;
-        const data = cm.getAsUint8Array();
-        gl.bindTexture(gl.TEXTURE_2D, maskTex);
-        gl.pixelStorei(gl.UNPACK_FLIP_Y_WEBGL, true);
-        gl.pixelStorei(gl.UNPACK_ALIGNMENT, 1);
-        gl.texImage2D(gl.TEXTURE_2D, 0, gl.R8, w, h, 0, gl.RED, gl.UNSIGNED_BYTE, data);
-        gl.uniform2f(uMaskSize, w, h);
-        cm.close();
+  // 2. Dispatch a frame to the inference worker. One-in-flight: if the
+  //    worker is still busy or the rate gate hasn't fired, we skip this
+  //    rAF tick. The worker replies with mask + landmarks asynchronously;
+  //    the onmessage handler uploads the mask and stashes landmarks.
+  const wantInfer = workerReady && !workerBusy && !workerBroken &&
+                    (now - lastInferenceMs) >= (1000 / +infRateInput.value);
+  if (wantInfer && video.readyState >= 2) {
+    lastInferenceMs = now;
+    workerBusy = true;
+    try {
+      if (typeof VideoFrame !== 'undefined') {
+        const frame = new VideoFrame(video);  // zero-copy on Chrome
+        worker.postMessage(
+          { type: 'infer', frame, ts: now, wantHands: foamToggle.checked },
+          [frame],
+        );
+      } else {
+        // Fallback: async ImageBitmap path. Fire-and-forget so loop() stays sync.
+        createImageBitmap(video).then(bmp => {
+          worker.postMessage(
+            { type: 'infer', frame: bmp, ts: now, wantHands: foamToggle.checked },
+            [bmp],
+          );
+        }).catch(err => {
+          workerBusy = false;
+          console.warn('Frame capture failed', err);
+        });
       }
-      result.close?.();
-    });
-  } catch (e) {
-    console.error('Segmentation error', e);
+    } catch (err) {
+      workerBusy = false;
+      console.warn('Frame capture failed', err);
+    }
   }
 
-  // 2b. Optional: hand tracking → position foam finger overlays. The hand
-  //     landmarker operates on the raw (unmirrored) video, so we flip X
-  //     when mirror is on to match what the user sees.
-  if (runInference && foamToggle.checked && handLandmarker) {
-    let hands = [];
-    try {
-      const r = handLandmarker.detectForVideo(video, now);
-      hands = r?.landmarks || [];
-    } catch (e) {
-      console.error('Hand detection error', e);
-    }
+  // 2b. Apply the most recent hand landmarks to foam DOM overlays every
+  //     rAF tick (even when the worker isn't ready yet — lastLandmarks is
+  //     just empty). Mirror flip is read live so toggling Mirror is instant.
+  if (foamToggle.checked) {
+    const hands = lastLandmarks;
     const mirror = mirrorInput.checked;
     for (let i = 0; i < hands.length; i++) {
       const h = hands[i];
@@ -656,9 +755,6 @@ const progressSub   = document.getElementById('progressSub');
 const progressCta   = document.getElementById('progressCta');
 
 async function preload() {
-  progressSub.textContent = 'Initializing MediaPipe runtime…';
-  const vision = await FilesetResolver.forVisionTasks(WASM_URL);
-
   progressSub.textContent = 'Downloading models and backgrounds…';
 
   const items = [
@@ -703,20 +799,19 @@ async function preload() {
     it.buffer = buf;
   }));
 
-  progressSub.textContent = 'Building segmenter…';
-  segmenter = await ImageSegmenter.createFromOptions(vision, {
-    baseOptions: { modelAssetBuffer: items[0].buffer, delegate: 'GPU' },
-    runningMode: 'VIDEO',
-    outputCategoryMask: true,
-    outputConfidenceMasks: false,
-  });
-
-  progressSub.textContent = 'Building hand tracker…';
-  handLandmarker = await HandLandmarker.createFromOptions(vision, {
-    baseOptions: { modelAssetBuffer: items[1].buffer, delegate: 'GPU' },
-    runningMode: 'VIDEO',
-    numHands: 4,
-  });
+  // Hand off both model buffers to the inference worker. Transferring
+  // detaches the main-thread Uint8Arrays (zero-copy); we null them below.
+  progressSub.textContent = 'Starting inference worker…';
+  const wasmBaseUrl = new URL(WASM_URL, location.href).href;
+  const segBuf  = items[0].buffer;
+  const handBuf = items[1].buffer;
+  worker.postMessage(
+    { type: 'init', segBuffer: segBuf, handBuffer: handBuf, wasmBaseUrl },
+    [segBuf.buffer, handBuf.buffer],
+  );
+  items[0].buffer = null;
+  items[1].buffer = null;
+  await workerReadyPromise;
 
   progressSub.textContent = 'Decoding backgrounds…';
   for (const it of items) {
