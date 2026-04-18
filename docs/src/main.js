@@ -99,6 +99,13 @@ onResult(() => {
 // the dispatch-frame-to-worker step is gated by the user's Hz slider.
 let lastInferenceMs = -Infinity;
 
+// When foam is on, alternate segmenter and hand-landmarker across
+// successive inferences so each posted frame runs only one task. Halves
+// GPU work per tick (the two MediaPipe tasks share the GPU with our
+// WebGL compositor). Seg and hands each update at user Hz / 2, which is
+// imperceptible for a soft overlay.
+let nextIsSeg = true;
+
 // Cached canvas bounding rect for landmark → viewport mapping.
 let canvasRect = canvas.getBoundingClientRect();
 window.addEventListener('resize', () => { canvasRect = canvas.getBoundingClientRect(); });
@@ -175,8 +182,12 @@ function loop() {
   // is busy / not ready / broken; in that case we leave lastInferenceMs
   // alone so the next tick can try again immediately.
   if ((now - lastInferenceMs) >= 1000 / +infRateInput.value) {
-    if (tryInfer(video, now, foamToggle.checked)) {
+    const foam = foamToggle.checked;
+    const wantSeg   = foam ?  nextIsSeg : true;
+    const wantHands = foam ? !nextIsSeg : false;
+    if (tryInfer(video, now, wantSeg, wantHands)) {
       lastInferenceMs = now;
+      if (foam) nextIsSeg = !nextIsSeg;
     }
   }
 

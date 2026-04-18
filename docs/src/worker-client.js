@@ -28,7 +28,9 @@ worker.addEventListener('message', (e) => {
   } else if (m.type === 'result') {
     busy = false;
     if (m.mask) uploadMask(m.mask, m.maskW, m.maskH);
-    lastLandmarks = m.landmarks || [];
+    // null => the worker didn't run the hand landmarker this tick (staggered);
+    // keep whatever we had. [] is a real "zero hands detected" result.
+    if (m.landmarks != null) lastLandmarks = m.landmarks;
     onResultCb?.();
   } else if (m.type === 'error') {
     busy = false;
@@ -53,18 +55,20 @@ export function initWorker({ segBuffer, handBuffer, wasmBaseUrl }) {
 }
 
 // Attempt to dispatch a frame. Returns true iff a frame was actually sent;
-// caller uses that to gate its rate limiter.
-export function tryInfer(videoEl, ts, wantHands) {
+// caller uses that to gate its rate limiter. wantSeg and wantHands are
+// independent so the caller can stagger them across successive inferences.
+export function tryInfer(videoEl, ts, wantSeg, wantHands) {
   if (!ready || busy || broken) return false;
+  if (!wantSeg && !wantHands) return false;
   busy = true;
   try {
     if (typeof VideoFrame !== 'undefined') {
       const frame = new VideoFrame(videoEl);  // zero-copy on Chrome
-      worker.postMessage({ type: 'infer', frame, ts, wantHands }, [frame]);
+      worker.postMessage({ type: 'infer', frame, ts, wantSeg, wantHands }, [frame]);
     } else {
       // Fallback: async ImageBitmap. Fire-and-forget so the rAF loop stays sync.
       createImageBitmap(videoEl).then(bmp => {
-        worker.postMessage({ type: 'infer', frame: bmp, ts, wantHands }, [bmp]);
+        worker.postMessage({ type: 'infer', frame: bmp, ts, wantSeg, wantHands }, [bmp]);
       }).catch(err => {
         busy = false;
         console.warn('Frame capture failed', err);

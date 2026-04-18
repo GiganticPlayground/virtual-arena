@@ -40,19 +40,25 @@ self.onmessage = async (e) => {
     }
 
     if (msg.type === 'infer') {
+      // Main thread decides which task(s) to run this tick. Staggering
+      // them halves the GPU work per inference when foam is on.
       let mask = null, maskW = 0, maskH = 0;
-      segmenter.segmentForVideo(msg.frame, msg.ts, (r) => {
-        const cm = r.categoryMask;
-        if (cm) {
-          maskW = cm.width;
-          maskH = cm.height;
-          mask  = cm.getAsUint8Array();
-          cm.close();
-        }
-        r.close?.();
-      });
+      if (msg.wantSeg) {
+        segmenter.segmentForVideo(msg.frame, msg.ts, (r) => {
+          const cm = r.categoryMask;
+          if (cm) {
+            maskW = cm.width;
+            maskH = cm.height;
+            mask  = cm.getAsUint8Array();
+            cm.close();
+          }
+          r.close?.();
+        });
+      }
 
-      let landmarks = [];
+      // null (not []) means "did not run" — main thread uses that to skip
+      // overwriting the cached landmarks from the previous hand tick.
+      let landmarks = null;
       if (msg.wantHands) {
         const hr = handLandmarker.detectForVideo(msg.frame, msg.ts);
         landmarks = hr?.landmarks ?? [];
