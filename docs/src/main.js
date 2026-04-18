@@ -1,30 +1,33 @@
-// App entry point. Wires up UI controls, owns the Start/Stop lifecycle and
-// the rAF loop. Everything stateful lives in its own module; this file is
-// glue that coordinates them.
+// App entry point. With the OffscreenCanvas refactor, the main thread does
+// only: DOM control wiring, <video> lifecycle, foam-finger overlay transforms,
+// and per-rAF cam frame capture + postMessage. All WebGL + MediaPipe work is
+// in ./worker.js.
 
 import {
   canvas, video, fpsEl, infEl, toggleBtn,
   featherInput, featherVal, mirrorInput, foamToggle,
   infRateInput, infRateVal, sourceSel, uploadVideoInput,
   camSize, camSizeVal, camX, camXVal, camY, camYVal,
+  modelSel, trimInput, trimVal,
   progressSub, progressLabel,
   showError, clearError,
 } from './dom.js';
-import { uploadCamFrame, drawFrame } from './renderer.js';
-import { tryInfer, getLandmarks, clearLandmarks, onResult } from './worker-client.js';
+import { postFrame, getLandmarks, clearLandmarks, onResult, setActiveModel } from './worker-client.js';
 import { startSource, teardownSource } from './source.js';
 import { applyFoam, hideFoamFrom } from './foam.js';
-import {
-  populateArenaSelect, wireArenaSelect, wireBackgroundUpload, getBgAspect,
-} from './backgrounds.js';
+import { populateArenaSelect, wireArenaSelect, wireBackgroundUpload } from './backgrounds.js';
 import { preload } from './preload.js';
 
-// ---- Init UI ----------------------------------------------------------
+// Transfer canvas control to the worker BEFORE anything else touches it.
+// After this call, the <canvas> element stays in the DOM (CSS layout still
+// applies) but main can no longer getContext or draw on it.
+const offscreenCanvas = canvas.transferControlToOffscreen();
+
+// ---- UI wiring --------------------------------------------------------
 populateArenaSelect();
 wireArenaSelect();
 wireBackgroundUpload();
 
-// Live-value labels next to sliders.
 for (const [input, span] of [[camSize, camSizeVal], [camX, camXVal], [camY, camYVal]]) {
   const update = () => { span.textContent = (+input.value).toFixed(2); };
   input.addEventListener('input', update);
@@ -32,11 +35,12 @@ for (const [input, span] of [[camSize, camSizeVal], [camX, camXVal], [camY, camY
 }
 infRateInput.addEventListener('input', () => { infRateVal.textContent = infRateInput.value; });
 featherInput.addEventListener('input', () => { featherVal.textContent = (+featherInput.value).toFixed(1); });
+trimInput.addEventListener('input',    () => { trimVal.textContent    = (+trimInput.value).toFixed(2); });
+modelSel.addEventListener('change',    () => { setActiveModel(modelSel.value); });
 foamToggle.addEventListener('change', () => {
   if (!foamToggle.checked) hideFoamFrom(0);
 });
 
-// Live source swap while running.
 sourceSel.addEventListener('change', async () => {
   if (!running) return;
   toggleBtn.disabled = true;
@@ -45,8 +49,7 @@ sourceSel.addEventListener('change', async () => {
   finally { toggleBtn.disabled = false; }
 });
 
-// Uploaded video: single "Custom" entry in the Source dropdown. Blob URL is
-// kept alive for the session and revoked when a new file is picked.
+// User-supplied video → single "Custom" entry in the Source dropdown.
 let customVideoBlobUrl = null;
 uploadVideoInput.addEventListener('change', async (e) => {
   const file = e.target.files?.[0];
@@ -76,13 +79,12 @@ uploadVideoInput.addEventListener('change', async (e) => {
 let running = false;
 let rafId   = 0;
 
-// Render FPS accumulators.
 let lastFrame = performance.now();
 let fpsAcc = 0, fpsFrames = 0;
 let lowWarned = false;
 
-// Inference FPS accumulators. Bumped by the onResult callback; drained by
-// the render loop on the same 15-frame cadence as the render HUD.
+// Inference FPS accumulators. Bumped by onResult (fires when a worker
+// 'rendered' reply carries inference results).
 let lastInfMs = -1;
 let infAcc = 0, infFrames = 0;
 let infStaleTimer = 0;
@@ -95,18 +97,13 @@ onResult(() => {
   lastInfMs = inow;
 });
 
-// Inference rate limiter. The compositor always draws every rAF tick; only
-// the dispatch-frame-to-worker step is gated by the user's Hz slider.
+// Inference rate limiter. Gates wantSeg/wantHands; cam-frame posting happens
+// every rAF tick regardless (at display rate, throttled by worker busy gate).
 let lastInferenceMs = -Infinity;
 
-// When foam is on, alternate segmenter and hand-landmarker across
-// successive inferences so each posted frame runs only one task. Halves
-// GPU work per tick (the two MediaPipe tasks share the GPU with our
-// WebGL compositor). Seg and hands each update at user Hz / 2, which is
-// imperceptible for a soft overlay.
+// Alternate seg + hands when foam is on (halves GPU work per inference tick).
 let nextIsSeg = true;
 
-// Cached canvas bounding rect for landmark → viewport mapping.
 let canvasRect = canvas.getBoundingClientRect();
 window.addEventListener('resize', () => { canvasRect = canvas.getBoundingClientRect(); });
 
@@ -157,7 +154,7 @@ function loop() {
     fpsAcc = 0; fpsFrames = 0;
     fpsEl.textContent = `Render  ${fps.toFixed(0).padStart(3, ' ')}`;
     if (fps < 20 && !lowWarned) {
-      console.warn(`[virtual-arena] FPS dropped below 20 (${fps.toFixed(1)}). Consider a smaller model or lower capture resolution.`);
+      console.warn(`[virtual-arena] FPS dropped below 20 (${fps.toFixed(1)}).`);
       lowWarned = true;
     } else if (fps >= 25) {
       lowWarned = false;
@@ -168,7 +165,6 @@ function loop() {
       infEl.textContent = `Infer   ${inf.toFixed(0).padStart(3, ' ')}`;
       infStaleTimer = 0;
     } else if (++infStaleTimer >= 2) {
-      // No inference results for ~2 windows → reset.
       infEl.textContent = 'Infer     —';
       lastInfMs = -1;
     }
@@ -176,22 +172,7 @@ function loop() {
 
   if (video.readyState < 2) return;
 
-  uploadCamFrame(video);
-
-  // Rate-limit inference dispatch. tryInfer() returns false if the worker
-  // is busy / not ready / broken; in that case we leave lastInferenceMs
-  // alone so the next tick can try again immediately.
-  if ((now - lastInferenceMs) >= 1000 / +infRateInput.value) {
-    const foam = foamToggle.checked;
-    const wantSeg   = foam ?  nextIsSeg : true;
-    const wantHands = foam ? !nextIsSeg : false;
-    if (tryInfer(video, now, wantSeg, wantHands)) {
-      lastInferenceMs = now;
-      if (foam) nextIsSeg = !nextIsSeg;
-    }
-  }
-
-  // Shared scale + offset for shader and foam-finger DOM placement.
+  // Shared source scale + offset (drives foam DOM and the shader).
   const S  = +camSize.value;
   const px = +camX.value;
   const py = +camY.value;
@@ -202,18 +183,30 @@ function loop() {
     applyFoam(getLandmarks(), mirrorInput.checked, canvasRect, S, camOx, camOy);
   }
 
-  drawFrame({
-    bgAspect:   getBgAspect(),
+  // Decide whether this tick's frame also carries an inference request.
+  const wantInfer = (now - lastInferenceMs) >= 1000 / +infRateInput.value;
+  const foam = foamToggle.checked;
+  const wantSeg   = wantInfer && (foam ?  nextIsSeg : true);
+  const wantHands = wantInfer && (foam ? !nextIsSeg : false);
+
+  const sent = postFrame(video, now, {
     feather:    +featherInput.value,
-    mirror:     mirrorInput.checked,
+    mirror:     mirrorInput.checked ? 1.0 : 0.0,
     camScale:   S,
     camOffsetX: camOx,
     camOffsetY: camOy,
-  });
+    trim:       +trimInput.value,
+  }, wantSeg, wantHands);
+
+  if (sent && wantInfer) {
+    lastInferenceMs = now;
+    if (foam) nextIsSeg = !nextIsSeg;
+  }
 }
 
-// Kick off the preload flow.
-preload().catch(e => {
+// Kick off the preload flow. The OffscreenCanvas rides along so init() can
+// hand it to the worker in the same message as the model buffers.
+preload(offscreenCanvas).catch(e => {
   progressSub.textContent = 'Preload failed — see error below';
   progressLabel.textContent = '';
   showError('Preload failed: ' + e.message);

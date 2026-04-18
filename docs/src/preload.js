@@ -3,7 +3,7 @@
 // (streaming) so we can show real byte progress, then pass the buffers to
 // MediaPipe via `modelAssetBuffer` — no second download.
 
-import { ARENAS, MODEL_URL, HAND_MODEL_URL, WASM_URL } from './config.js';
+import { ARENAS, BINARY_SEG_URL, MULTICLASS_SEG_URL, HAND_MODEL_URL, WASM_URL } from './config.js';
 import { arenaImages, loadBackground } from './backgrounds.js';
 import { initWorker } from './worker-client.js';
 import {
@@ -11,13 +11,16 @@ import {
   preloadEl, toggleBtn,
 } from './dom.js';
 
-export async function preload() {
+export async function preload(offscreenCanvas) {
   progressSub.textContent = 'Downloading models and backgrounds…';
 
   const items = [
-    { key: 'seg',   url: MODEL_URL      },
-    { key: 'hand',  url: HAND_MODEL_URL },
-    ...ARENAS.map((a, i) => ({ key: 'arena', arenaIdx: i, url: a.url })),
+    { key: 'segBinary',     url: BINARY_SEG_URL     },
+    { key: 'segMulticlass', url: MULTICLASS_SEG_URL },
+    { key: 'hand',          url: HAND_MODEL_URL     },
+    // Solid-color arenas don't need fetching; loadBackground() synthesizes
+    // a 1x1 canvas for them when selected.
+    ...ARENAS.flatMap((a, i) => a.color ? [] : [{ key: 'arena', arenaIdx: i, url: a.url }]),
   ];
 
   // Open all requests in parallel, read Content-Length for each.
@@ -56,15 +59,22 @@ export async function preload() {
     it.buffer = buf;
   }));
 
-  // Hand model buffers off to the worker (transferred, so we null the
-  // main-thread refs to avoid accidental use of the detached arrays).
-  progressSub.textContent = 'Starting inference worker…';
+  // Hand model buffers + the OffscreenCanvas off to the worker (all
+  // transferred). After this call the main-thread Uint8Arrays are detached
+  // and the <canvas> can no longer be drawn to from here.
+  progressSub.textContent = 'Starting worker (compositor + inference)…';
   const wasmBaseUrl = new URL(WASM_URL, location.href).href;
-  const segBuffer  = items[0].buffer;
-  const handBuffer = items[1].buffer;
-  await initWorker({ segBuffer, handBuffer, wasmBaseUrl });
+  const binarySegBuffer     = items[0].buffer;
+  const multiclassSegBuffer = items[1].buffer;
+  const handBuffer          = items[2].buffer;
+  await initWorker({
+    canvas: offscreenCanvas,
+    binarySegBuffer, multiclassSegBuffer, handBuffer,
+    wasmBaseUrl,
+  });
   items[0].buffer = null;
   items[1].buffer = null;
+  items[2].buffer = null;
 
   progressSub.textContent = 'Decoding backgrounds…';
   for (const it of items) {

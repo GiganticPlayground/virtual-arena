@@ -1,9 +1,7 @@
-// Wraps ./worker.js. Owns the ready/busy/broken state and the one-in-flight
-// gate. The main-thread render loop calls tryInfer(); results flow straight
-// into the renderer's mask texture and a landmark cache.
+// Wraps ./worker.js. The worker owns both inference AND the OffscreenCanvas
+// compositor now — main posts frames + params and gets back landmarks only.
 
 import { showError } from './dom.js';
-import { uploadMask } from './renderer.js';
 
 const worker = new Worker(new URL('./worker.js', import.meta.url), { type: 'module' });
 
@@ -15,8 +13,8 @@ let lastLandmarks = [];
 let readyResolve;
 const readyPromise = new Promise(r => { readyResolve = r; });
 
-// Optional callback fired whenever a 'result' reply arrives. main.js uses
-// this for the inference-rate HUD.
+// Fires whenever a 'rendered' reply carries inference results. main.js
+// uses this to bump the Infer HUD.
 let onResultCb = null;
 export function onResult(cb) { onResultCb = cb; }
 
@@ -25,13 +23,12 @@ worker.addEventListener('message', (e) => {
   if (m.type === 'ready') {
     ready = true;
     readyResolve();
-  } else if (m.type === 'result') {
+  } else if (m.type === 'rendered') {
     busy = false;
-    if (m.mask) uploadMask(m.mask, m.maskW, m.maskH);
-    // null => the worker didn't run the hand landmarker this tick (staggered);
-    // keep whatever we had. [] is a real "zero hands detected" result.
+    // null => worker didn't run hand landmarker this tick (staggered);
+    // keep the cached value. [] is a real "zero hands detected" result.
     if (m.landmarks != null) lastLandmarks = m.landmarks;
-    onResultCb?.();
+    if (m.hadSeg || m.hadHands) onResultCb?.();
   } else if (m.type === 'error') {
     busy = false;
     if (m.stage === 'init') broken = true;
@@ -44,31 +41,41 @@ worker.addEventListener('error', (e) => {
   showError('Worker crashed: ' + (e.message || 'unknown'));
 });
 
-// Hand both model buffers + wasm base URL to the worker. Transferring
-// detaches the passed Uint8Arrays — callers should null their references.
-export function initWorker({ segBuffer, handBuffer, wasmBaseUrl }) {
+// Transfer the OffscreenCanvas + all model buffers in one init message.
+// All four are detached from main after this call.
+export function initWorker({ canvas, binarySegBuffer, multiclassSegBuffer, handBuffer, wasmBaseUrl }) {
   worker.postMessage(
-    { type: 'init', segBuffer, handBuffer, wasmBaseUrl },
-    [segBuffer.buffer, handBuffer.buffer],
+    { type: 'init', canvas, binarySegBuffer, multiclassSegBuffer, handBuffer, wasmBaseUrl },
+    [canvas, binarySegBuffer.buffer, multiclassSegBuffer.buffer, handBuffer.buffer],
   );
   return readyPromise;
 }
 
-// Attempt to dispatch a frame. Returns true iff a frame was actually sent;
-// caller uses that to gate its rate limiter. wantSeg and wantHands are
-// independent so the caller can stagger them across successive inferences.
-export function tryInfer(videoEl, ts, wantSeg, wantHands) {
+// Swap which segmenter runs on subsequent frames. 'binary' | 'multiclass'.
+export function setActiveModel(which) {
+  worker.postMessage({ type: 'setModel', model: which });
+}
+
+// Post a cam frame + current render params (+ optional inference flags) to
+// the worker. Returns true iff a frame was actually sent. One-in-flight:
+// caller's rAF will skip while the worker is busy.
+export function postFrame(videoEl, ts, params, wantSeg, wantHands) {
   if (!ready || busy || broken) return false;
-  if (!wantSeg && !wantHands) return false;
   busy = true;
   try {
     if (typeof VideoFrame !== 'undefined') {
       const frame = new VideoFrame(videoEl);  // zero-copy on Chrome
-      worker.postMessage({ type: 'infer', frame, ts, wantSeg, wantHands }, [frame]);
+      worker.postMessage(
+        { type: 'frame', frame, ts, params, wantSeg, wantHands },
+        [frame],
+      );
     } else {
       // Fallback: async ImageBitmap. Fire-and-forget so the rAF loop stays sync.
       createImageBitmap(videoEl).then(bmp => {
-        worker.postMessage({ type: 'infer', frame: bmp, ts, wantSeg, wantHands }, [bmp]);
+        worker.postMessage(
+          { type: 'frame', frame: bmp, ts, params, wantSeg, wantHands },
+          [bmp],
+        );
       }).catch(err => {
         busy = false;
         console.warn('Frame capture failed', err);
@@ -80,6 +87,18 @@ export function tryInfer(videoEl, ts, wantSeg, wantHands) {
     console.warn('Frame capture failed', err);
     return false;
   }
+}
+
+// Upload a background to the worker's bgTex. `source` is anything
+// createImageBitmap accepts (HTMLImageElement, Blob, ImageBitmap).
+// imageOrientation:'flipY' asks the browser to flip rows during decode so
+// the bitmap lands in WebGL bottom-up order; the worker uploads it with
+// UNPACK_FLIP_Y_WEBGL=false to match. Without this, Chrome's ImageBitmap
+// path leaves the image top-down and FLIP_Y is effectively ignored,
+// producing an upside-down background.
+export async function setBackground(source) {
+  const bitmap = await createImageBitmap(source, { imageOrientation: 'flipY' });
+  worker.postMessage({ type: 'background', bitmap }, [bitmap]);
 }
 
 export function getLandmarks()   { return lastLandmarks; }

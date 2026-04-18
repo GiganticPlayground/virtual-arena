@@ -29,11 +29,16 @@ uniform vec2  u_bgScale;   // cover-fit scale
 uniform vec2  u_bgOffset;  // cover-fit offset
 uniform float u_camScale;  // source size (1.0 = fill canvas)
 uniform vec2  u_camOffset; // source position in canvas UV
+uniform float u_trim;      // silhouette trim: >0 erodes, <0 dilates
+uniform float u_maskInvert; // 1.0 when the active segmenter uses 0=person
 
 float sampleMask(vec2 uv) {
-  // multiclass: any category != 0 is "person".
+  // Multiclass model: any non-zero category is "person".
+  // Binary selfie_segmenter: category 0 is "person" — inverted. The worker
+  // sets u_maskInvert based on the active model so this is transparent here.
   float v = texture(u_mask, uv).r;
-  return step(0.5 / 255.0, v);
+  float fg = step(0.5 / 255.0, v);
+  return u_maskInvert > 0.5 ? (1.0 - fg) : fg;
 }
 
 void main() {
@@ -47,17 +52,27 @@ void main() {
   if (u_mirror > 0.5) camUv.x = 1.0 - camUv.x;
   vec4 cam = texture(u_cam, camUv);
 
+  // 5x5 mask tap kernel. Outer taps (dx/dy = ±2) sit ~u_feather mask
+  // texels from center; inner taps interpolate in between. 25 taps gives
+  // 26 discrete m levels, smooth enough for u_feather to visibly widen
+  // the soft silhouette edge from hard (feather~0) to very soft (feather=5).
   vec2 texel = 1.0 / u_maskSize;
-  float step_ = max(u_feather, 0.0001);
+  float scale = max(u_feather, 0.0001) * 0.5;
   float m = 0.0;
-  for (int dy = -1; dy <= 1; ++dy) {
-    for (int dx = -1; dx <= 1; ++dx) {
-      vec2 ofs = vec2(float(dx), float(dy)) * texel * step_;
+  for (int dy = -2; dy <= 2; ++dy) {
+    for (int dx = -2; dx <= 2; ++dx) {
+      vec2 ofs = vec2(float(dx), float(dy)) * texel * scale;
       m += sampleMask(camUv + ofs);
     }
   }
-  m /= 9.0;
+  m /= 25.0;
 
-  float alpha = smoothstep(0.35, 0.65, m) * inside;
+  // Trim shifts the smoothstep band. Positive trim requires more of the
+  // kernel to be foreground before outputting alpha, which peels off thin
+  // bleed (chair backs, armrests) at the cost of slightly thinner edges.
+  // Negative trim dilates — useful for catching hair wisps.
+  float lo = clamp(0.35 + u_trim, 0.0, 0.98);
+  float hi = clamp(0.65 + u_trim, lo + 0.02, 1.0);
+  float alpha = smoothstep(lo, hi, m) * inside;
   outColor = vec4(mix(bg.rgb, cam.rgb, alpha), 1.0);
 }`;

@@ -1,17 +1,27 @@
 // Shared constants. Paths are all relative to the served root (docs/).
 
 // Backgrounds. Drop new .jpg/.png in docs/arenas/ and add here.
+// For a solid color, set `color` (any CSS color string) and leave url as a
+// unique sentinel — preload skips fetching, and loadBackground synthesizes
+// a 1x1 canvas.
 export const ARENAS = [
   { label: 'Background 1', url: './arenas/1.png' },
   { label: 'Background 2', url: './arenas/2.png' },
   { label: 'Background 3', url: './arenas/3.jpg' },
+  { label: 'Solid White',  url: 'solid:white', color: '#ffffff' },
 ];
 
-// Multiclass selfie segmenter (category 0 = background; 1-5 = person parts).
+// Two segmenter models the user can switch between at runtime:
+//   - Binary (selfie_segmenter): single person-vs-background decision;
+//     much cleaner silhouette in practice (chairs, props stay out).
+//   - Multiclass: per-pixel person-part classification (0 = bg; 1-5 =
+//     hair/body/face/clothes/others). Tends to drag in objects touching
+//     the subject, so it's here as an opt-in.
 // Hand landmarker is used for the foam-finger overlay.
-export const MODEL_URL      = './models/selfie_multiclass_256x256.tflite';
-export const HAND_MODEL_URL = './models/hand_landmarker.task';
-export const WASM_URL       = './vision/wasm';
+export const BINARY_SEG_URL     = './models/selfie_segmenter.tflite';
+export const MULTICLASS_SEG_URL = './models/selfie_multiclass_256x256.tflite';
+export const HAND_MODEL_URL     = './models/hand_landmarker.task';
+export const WASM_URL           = './vision/wasm';
 
 // Foam finger art: inline SVG data URL (red mitt with raised index finger
 // and "#1" on the palm). Drawn pointing up; rotated at runtime to match
