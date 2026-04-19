@@ -27,6 +27,7 @@ export const camXVal          = $('camXVal');
 export const camY             = $('camY');
 export const camYVal          = $('camYVal');
 export const modelSel         = $('model');
+export const rvmQualitySel    = $('rvmQuality');
 export const trimInput        = $('trim');
 export const trimVal          = $('trimVal');
 export const preloadEl        = $('preload');

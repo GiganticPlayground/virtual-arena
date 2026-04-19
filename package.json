@@ -9,7 +9,8 @@
     "start": "node setup.mjs && serve docs -l 8123 --no-clipboard"
   },
   "dependencies": {
-    "@mediapipe/tasks-vision": "^0.10.34"
+    "@mediapipe/tasks-vision": "^0.10.34",
+    "onnxruntime-web": "^1.24.3"
   },
   "devDependencies": {
     "serve": "^14.2.4"

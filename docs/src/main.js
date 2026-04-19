@@ -8,11 +8,11 @@ import {
   featherInput, featherVal, mirrorInput, foamToggle,
   infRateInput, infRateVal, sourceSel, uploadVideoInput,
   camSize, camSizeVal, camX, camXVal, camY, camYVal,
-  modelSel, trimInput, trimVal,
+  modelSel, rvmQualitySel, trimInput, trimVal,
   progressSub, progressLabel,
   showError, clearError,
 } from './dom.js';
-import { postFrame, getLandmarks, clearLandmarks, onResult, setActiveModel } from './worker-client.js';
+import { postFrame, getLandmarks, clearLandmarks, onRender, onInfer, setActiveModel, setRvmQuality, onRvmStatus } from './worker-client.js';
 import { startSource, teardownSource } from './source.js';
 import { applyFoam, hideFoamFrom } from './foam.js';
 import { populateArenaSelect, wireArenaSelect, wireBackgroundUpload } from './backgrounds.js';
@@ -36,7 +36,28 @@ for (const [input, span] of [[camSize, camSizeVal], [camX, camXVal], [camY, camY
 infRateInput.addEventListener('input', () => { infRateVal.textContent = infRateInput.value; });
 featherInput.addEventListener('input', () => { featherVal.textContent = (+featherInput.value).toFixed(1); });
 trimInput.addEventListener('input',    () => { trimVal.textContent    = (+trimInput.value).toFixed(2); });
-modelSel.addEventListener('change',    () => { setActiveModel(modelSel.value); });
+// Quality dropdown only meaningful for RVM. u2netp and silueta ship as
+// fixed-shape ONNX (320x320), so changing input size throws at OrtRun.
+modelSel.addEventListener('change',    () => {
+  setActiveModel(modelSel.value);
+  rvmQualitySel.disabled = modelSel.value !== 'rvm';
+});
+rvmQualitySel.addEventListener('change', () => { setRvmQuality(rvmQualitySel.value); });
+rvmQualitySel.disabled = modelSel.value !== 'rvm';
+
+// Surface ONNX model (first-time) load state in the status box so the
+// user sees why the cutout hasn't switched yet. Subsequent toggles are
+// instant (session stays in memory).
+const ONNX_LOAD_LABELS = {
+  rvm:     'Loading RVM model (~15 MB + ORT runtime)…',
+  u2netp:  'Loading U²-Net-p model (~4 MB + ORT runtime)…',
+  silueta: 'Loading Silueta model (~42 MB + ORT runtime)…',
+  modnet:  'Loading MODNet model (~26 MB + ORT runtime)…',
+};
+onRvmStatus((m) => {
+  if (m.status === 'loading')    showError(ONNX_LOAD_LABELS[m.model] || 'Loading ONNX model…');
+  else if (m.status === 'ready') clearError();
+});
 foamToggle.addEventListener('change', () => {
   if (!foamToggle.checked) hideFoamFrom(0);
 });
@@ -79,22 +100,41 @@ uploadVideoInput.addEventListener('change', async (e) => {
 let running = false;
 let rafId   = 0;
 
-let lastFrame = performance.now();
-let fpsAcc = 0, fpsFrames = 0;
+// Event-driven HUD: Render FPS counts actual worker-side draws; Infer FPS
+// counts ticks that carried segmentation or hand inference. Both use an
+// EMA so each event updates the display immediately with a smoothed value.
+// This matters for slow models like RVM (~1-2 Hz) where any render-tick
+// windowing would stale out between inferences and read "—".
+let renderEma = 0, lastRenderMs = -1;
+let inferEma  = 0, lastInferMs  = -1;
 let lowWarned = false;
 
-// Inference FPS accumulators. Bumped by onResult (fires when a worker
-// 'rendered' reply carries inference results).
-let lastInfMs = -1;
-let infAcc = 0, infFrames = 0;
-let infStaleTimer = 0;
-onResult(() => {
-  const inow = performance.now();
-  if (lastInfMs > 0) {
-    infAcc += 1000 / Math.max(inow - lastInfMs, 1);
-    infFrames++;
+function fmtFps(v) { return v.toFixed(0).padStart(3, ' '); }
+
+onRender(() => {
+  const now = performance.now();
+  if (lastRenderMs > 0) {
+    const inst = 1000 / Math.max(now - lastRenderMs, 1);
+    renderEma = renderEma ? renderEma * 0.7 + inst * 0.3 : inst;
+    fpsEl.textContent = `Render  ${fmtFps(renderEma)}`;
+    if (renderEma < 20 && !lowWarned) {
+      console.warn(`[virtual-arena] Render FPS below 20 (${renderEma.toFixed(1)}).`);
+      lowWarned = true;
+    } else if (renderEma >= 25) {
+      lowWarned = false;
+    }
   }
-  lastInfMs = inow;
+  lastRenderMs = now;
+});
+
+onInfer(() => {
+  const now = performance.now();
+  if (lastInferMs > 0) {
+    const inst = 1000 / Math.max(now - lastInferMs, 1);
+    inferEma = inferEma ? inferEma * 0.7 + inst * 0.3 : inst;
+    infEl.textContent = `Infer   ${fmtFps(inferEma)}`;
+  }
+  lastInferMs = now;
 });
 
 // Inference rate limiter. Gates wantSeg/wantHands; cam-frame posting happens
@@ -113,7 +153,8 @@ function stop() {
   teardownSource();
   clearLandmarks();
   hideFoamFrom(0);
-  lastInfMs = -1; infAcc = 0; infFrames = 0; infStaleTimer = 0;
+  renderEma = 0; inferEma = 0;
+  lastRenderMs = -1; lastInferMs = -1;
   infEl.textContent = 'Infer     —';
   fpsEl.textContent = 'Render    —';
   toggleBtn.textContent = 'Start';
@@ -129,7 +170,6 @@ async function start() {
     running = true;
     toggleBtn.textContent = 'Stop';
     toggleBtn.classList.add('stop');
-    lastFrame = performance.now();
     loop();
   } catch (e) {
     showError(e.message || 'Source start failed');
@@ -145,30 +185,6 @@ function loop() {
   rafId = requestAnimationFrame(loop);
 
   const now = performance.now();
-  const dt  = now - lastFrame;
-  lastFrame = now;
-  fpsAcc += 1000 / Math.max(dt, 1);
-  fpsFrames++;
-  if (fpsFrames >= 15) {
-    const fps = fpsAcc / fpsFrames;
-    fpsAcc = 0; fpsFrames = 0;
-    fpsEl.textContent = `Render  ${fps.toFixed(0).padStart(3, ' ')}`;
-    if (fps < 20 && !lowWarned) {
-      console.warn(`[virtual-arena] FPS dropped below 20 (${fps.toFixed(1)}).`);
-      lowWarned = true;
-    } else if (fps >= 25) {
-      lowWarned = false;
-    }
-    if (infFrames > 0) {
-      const inf = infAcc / infFrames;
-      infAcc = 0; infFrames = 0;
-      infEl.textContent = `Infer   ${inf.toFixed(0).padStart(3, ' ')}`;
-      infStaleTimer = 0;
-    } else if (++infStaleTimer >= 2) {
-      infEl.textContent = 'Infer     —';
-      lastInfMs = -1;
-    }
-  }
 
   if (video.readyState < 2) return;
 

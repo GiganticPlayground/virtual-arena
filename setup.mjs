@@ -29,6 +29,39 @@ const MODELS = [
     name: 'hand_landmarker.task',
     url:  'https://storage.googleapis.com/mediapipe-models/hand_landmarker/hand_landmarker/float16/latest/hand_landmarker.task',
   },
+  {
+    name: 'rvm_mobilenetv3_fp32.onnx',
+    url:  'https://github.com/PeterL1n/RobustVideoMatting/releases/download/v1.0.0/rvm_mobilenetv3_fp32.onnx',
+  },
+  // U²-Net-p (portrait-tuned small). 4.5 MB, non-recurrent, 320x320 input.
+  // Decent cutout for single subjects, nearly free download, fast inference.
+  {
+    name: 'u2netp.onnx',
+    url:  'https://github.com/danielgatis/rembg/releases/download/v0.0.0/u2netp.onnx',
+  },
+  // Silueta (silhouette-trained saliency). ~42 MB. Higher quality than
+  // u2netp, still reasonable download. Handles multi-subject scenes OK.
+  {
+    name: 'silueta.onnx',
+    url:  'https://github.com/danielgatis/rembg/releases/download/v0.0.0/silueta.onnx',
+  },
+  // MODNet (portrait-matting). ~26 MB. Simpler op set than Silueta so
+  // WebGPU actually carries the load — usable at interactive rates.
+  {
+    name: 'modnet.onnx',
+    url:  'https://huggingface.co/Xenova/modnet/resolve/main/onnx/model.onnx',
+  },
+];
+
+// onnxruntime-web dist files we vendor alongside the MediaPipe bundle.
+// We use the JSPI (JavaScript Promise Integration) build because it loads
+// the *new* native WebGPU execution provider instead of the legacy JSEP
+// one. The new EP has complete AveragePool(ceil_mode=1) support, which
+// RVM needs. Requires Chrome 137+; falls back to WASM automatically.
+const ORT_FILES = [
+  'ort.jspi.min.mjs',
+  'ort-wasm-simd-threaded.jspi.mjs',
+  'ort-wasm-simd-threaded.jspi.wasm',
 ];
 
 async function exists(p) {
@@ -61,19 +94,29 @@ async function copyIfMissing(src, dst, label) {
 async function main() {
   await mkdir(join(PUB, 'models'), { recursive: true });
   await mkdir(join(PUB, 'vision'), { recursive: true });
+  await mkdir(join(PUB, 'ort'),    { recursive: true });
 
-  console.log('[1/2] MediaPipe models');
+  console.log('[1/3] MediaPipe + RVM models');
   for (const m of MODELS) {
     await download(m.url, join(PUB, 'models', m.name));
   }
 
-  console.log('[2/2] MediaPipe tasks-vision bundle + wasm');
-  const pkg = join(__dirname, 'node_modules', '@mediapipe', 'tasks-vision');
-  if (!(await exists(pkg))) {
+  console.log('[2/3] MediaPipe tasks-vision bundle + wasm');
+  const mpPkg = join(__dirname, 'node_modules', '@mediapipe', 'tasks-vision');
+  if (!(await exists(mpPkg))) {
     throw new Error('node_modules/@mediapipe/tasks-vision missing — run `npm install` first.');
   }
-  await copyIfMissing(join(pkg, 'vision_bundle.mjs'), join(PUB, 'vision', 'vision_bundle.mjs'), 'vision_bundle.mjs');
-  await copyIfMissing(join(pkg, 'wasm'), join(PUB, 'vision', 'wasm'), 'wasm/');
+  await copyIfMissing(join(mpPkg, 'vision_bundle.mjs'), join(PUB, 'vision', 'vision_bundle.mjs'), 'vision_bundle.mjs');
+  await copyIfMissing(join(mpPkg, 'wasm'), join(PUB, 'vision', 'wasm'), 'wasm/');
+
+  console.log('[3/3] onnxruntime-web runtime');
+  const ortPkg = join(__dirname, 'node_modules', 'onnxruntime-web', 'dist');
+  if (!(await exists(ortPkg))) {
+    throw new Error('node_modules/onnxruntime-web missing — run `npm install` first.');
+  }
+  for (const f of ORT_FILES) {
+    await copyIfMissing(join(ortPkg, f), join(PUB, 'ort', f), f);
+  }
 
   console.log('\nSetup complete. Run `npm start` to serve on http://localhost:8123');
 }

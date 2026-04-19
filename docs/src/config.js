@@ -23,6 +23,21 @@ export const MULTICLASS_SEG_URL = './models/selfie_multiclass_256x256.tflite';
 export const HAND_MODEL_URL     = './models/hand_landmarker.task';
 export const WASM_URL           = './vision/wasm';
 
+// Robust Video Matting (MobileNetV3 FP32, ~15 MB) via onnxruntime-web.
+// Third optional model; produces a continuous alpha matte instead of a
+// categorical mask, so the shader takes a different path when it's active.
+export const RVM_MODEL_URL      = './models/rvm_mobilenetv3_fp32.onnx';
+// U²-Net-p: tiny (4.5 MB) salient-object segmenter from the rembg project.
+// Non-recurrent, 320x320 input. Quick to try but coarser matte than RVM.
+export const U2NETP_MODEL_URL   = './models/u2netp.onnx';
+// Silueta: silhouette-trained saliency model (~42 MB) from rembg. Slower
+// than u2netp but much crisper edges and handles multi-subject OK.
+export const SILUETA_MODEL_URL  = './models/silueta.onnx';
+// MODNet (portrait matting, ~26 MB) from Xenova/modnet on HuggingFace.
+// Simpler op set than Silueta — WebGPU carries it at interactive rates.
+export const MODNET_MODEL_URL   = './models/modnet.onnx';
+export const ORT_URL            = './ort/';
+
 // Foam finger art: inline SVG data URL (red mitt with raised index finger
 // and "#1" on the palm). Drawn pointing up; rotated at runtime to match
 // the hand orientation.

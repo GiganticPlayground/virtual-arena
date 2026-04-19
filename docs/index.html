@@ -87,11 +87,23 @@
         Upload
         <input id="upload" type="file" accept="image/*" hidden>
       </label>
-      <label title="Segmenter model. Silhouette is a binary person/background model and usually stays off chairs and props. Multiclass predicts person-parts and is more inclusive but drags in objects touching people.">
+      <label title="Segmenter model. Silhouette / Multiclass: MediaPipe (fast, multi-person). U²-Net-p: ONNX on WebGPU, interactive single-subject matting. RVM: ONNX on WASM, recurrent single-subject matting. Silueta: ONNX, best quality but the graph falls back to CPU — ~0.2 FPS on this laptop — use as a quality reference, not interactive. First-time selection downloads the ONNX model.">
         Model
         <select id="model">
-          <option value="binary">Silhouette</option>
-          <option value="multiclass">Multiclass</option>
+          <option value="binary">Silhouette (MediaPipe, fast)</option>
+          <option value="multiclass">Multiclass (MediaPipe)</option>
+          <option value="rvm">RVM (ONNX, single-subject)</option>
+          <option value="u2netp">U²-Net-p (ONNX, 4 MB, interactive)</option>
+          <option value="modnet">MODNet (ONNX, 26 MB, interactive matting)</option>
+          <option value="silueta">Silueta (ONNX, 42 MB, ~0.2 FPS — quality reference)</option>
+        </select>
+      </label>
+      <label title="RVM input resolution. Smaller = faster but coarser matte. Only RVM supports variable input; U²-Net-p and Silueta ship as fixed-shape 320×320 ONNX so this is disabled for them.">
+        RVM Quality
+        <select id="rvmQuality">
+          <option value="quality">Quality (512×288)</option>
+          <option value="balanced">Balanced (384×224)</option>
+          <option value="fast">Fast (256×160)</option>
         </select>
       </label>
       <label>

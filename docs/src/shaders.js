@@ -29,14 +29,18 @@ uniform vec2  u_bgScale;   // cover-fit scale
 uniform vec2  u_bgOffset;  // cover-fit offset
 uniform float u_camScale;  // source size (1.0 = fill canvas)
 uniform vec2  u_camOffset; // source position in canvas UV
-uniform float u_trim;      // silhouette trim: >0 erodes, <0 dilates
+uniform float u_trim;       // silhouette trim: >0 erodes, <0 dilates
 uniform float u_maskInvert; // 1.0 when the active segmenter uses 0=person
+uniform float u_maskMode;   // 0 = categorical (MediaPipe), 1 = continuous alpha (RVM)
 
 float sampleMask(vec2 uv) {
-  // Multiclass model: any non-zero category is "person".
-  // Binary selfie_segmenter: category 0 is "person" — inverted. The worker
-  // sets u_maskInvert based on the active model so this is transparent here.
+  // Categorical path: MediaPipe returns a category index per texel. Any
+  //   non-zero category = person, unless u_maskInvert flips the convention
+  //   (binary selfie_segmenter uses 0=person).
+  // Continuous path: RVM returns a float alpha matte (0..1 encoded to 0..255);
+  //   no step — pass the value through so kernel averaging preserves detail.
   float v = texture(u_mask, uv).r;
+  if (u_maskMode > 0.5) return v;
   float fg = step(0.5 / 255.0, v);
   return u_maskInvert > 0.5 ? (1.0 - fg) : fg;
 }
@@ -67,12 +71,20 @@ void main() {
   }
   m /= 25.0;
 
-  // Trim shifts the smoothstep band. Positive trim requires more of the
-  // kernel to be foreground before outputting alpha, which peels off thin
-  // bleed (chair backs, armrests) at the cost of slightly thinner edges.
-  // Negative trim dilates — useful for catching hair wisps.
-  float lo = clamp(0.35 + u_trim, 0.0, 0.98);
-  float hi = clamp(0.65 + u_trim, lo + 0.02, 1.0);
-  float alpha = smoothstep(lo, hi, m) * inside;
+  // Derive alpha. Categorical mode: smoothstep across discrete kernel
+  // levels with a user-trim band shift. Continuous mode (RVM): the kernel
+  // average is already a soft alpha. Apply a sqrt gamma curve before trim:
+  // it preserves soft-edge softness while compensating for the WebGPU EP's
+  // slightly compressed output (sigmoid tops out ~0.87 instead of 1.0 due
+  // to GPU FP precision), so people don't fade to white on WebGPU.
+  float alpha;
+  if (u_maskMode > 0.5) {
+    alpha = clamp(sqrt(max(m, 0.0)) - u_trim, 0.0, 1.0);
+  } else {
+    float lo = clamp(0.35 + u_trim, 0.0, 0.98);
+    float hi = clamp(0.65 + u_trim, lo + 0.02, 1.0);
+    alpha = smoothstep(lo, hi, m);
+  }
+  alpha *= inside;
   outColor = vec4(mix(bg.rgb, cam.rgb, alpha), 1.0);
 }`;

@@ -3,7 +3,13 @@
 
 import { showError } from './dom.js';
 
-const worker = new Worker(new URL('./worker.js', import.meta.url), { type: 'module' });
+// Cache-bust the worker script with a load-time query string. Workers are
+// cached aggressively by the browser and normal reloads can re-run the
+// previous script. The query is ignored by the server but changes the URL
+// identity so the Worker constructor always fetches fresh.
+const workerUrl = new URL('./worker.js', import.meta.url);
+workerUrl.searchParams.set('v', String(Date.now()));
+const worker = new Worker(workerUrl, { type: 'module' });
 
 let ready  = false;
 let busy   = false;   // one-in-flight gate
@@ -13,10 +19,20 @@ let lastLandmarks = [];
 let readyResolve;
 const readyPromise = new Promise(r => { readyResolve = r; });
 
-// Fires whenever a 'rendered' reply carries inference results. main.js
-// uses this to bump the Infer HUD.
-let onResultCb = null;
-export function onResult(cb) { onResultCb = cb; }
+// Fires on every 'rendered' reply (one per worker draw). main.js uses
+// this for the actual canvas-update FPS.
+let onRenderCb = null;
+export function onRender(cb) { onRenderCb = cb; }
+
+// Fires only when the 'rendered' reply carried seg or hands. main.js
+// uses this for the Infer FPS HUD.
+let onInferCb = null;
+export function onInfer(cb) { onInferCb = cb; }
+
+// Fires when the worker reports RVM load state transitions
+// ('loading' | 'ready' | 'error').
+let onRvmStatusCb = null;
+export function onRvmStatus(cb) { onRvmStatusCb = cb; }
 
 worker.addEventListener('message', (e) => {
   const m = e.data;
@@ -28,7 +44,11 @@ worker.addEventListener('message', (e) => {
     // null => worker didn't run hand landmarker this tick (staggered);
     // keep the cached value. [] is a real "zero hands detected" result.
     if (m.landmarks != null) lastLandmarks = m.landmarks;
-    if (m.hadSeg || m.hadHands) onResultCb?.();
+    onRenderCb?.();
+    if (m.hadSeg || m.hadHands) onInferCb?.();
+  } else if (m.type === 'rvmStatus') {
+    onRvmStatusCb?.(m);
+    if (m.status === 'error') showError(`RVM: ${m.message}`);
   } else if (m.type === 'error') {
     busy = false;
     if (m.stage === 'init') broken = true;
@@ -41,11 +61,13 @@ worker.addEventListener('error', (e) => {
   showError('Worker crashed: ' + (e.message || 'unknown'));
 });
 
-// Transfer the OffscreenCanvas + all model buffers in one init message.
-// All four are detached from main after this call.
-export function initWorker({ canvas, binarySegBuffer, multiclassSegBuffer, handBuffer, wasmBaseUrl }) {
+// Transfer the OffscreenCanvas + all MediaPipe model buffers in one init
+// message. The ONNX models (RVM, u2netp, silueta) aren't preloaded — their
+// URLs are passed along so the worker can fetch them lazily the first time
+// the user selects one.
+export function initWorker({ canvas, binarySegBuffer, multiclassSegBuffer, handBuffer, wasmBaseUrl, onnxModelUrls }) {
   worker.postMessage(
-    { type: 'init', canvas, binarySegBuffer, multiclassSegBuffer, handBuffer, wasmBaseUrl },
+    { type: 'init', canvas, binarySegBuffer, multiclassSegBuffer, handBuffer, wasmBaseUrl, onnxModelUrls },
     [canvas, binarySegBuffer.buffer, multiclassSegBuffer.buffer, handBuffer.buffer],
   );
   return readyPromise;
@@ -54,6 +76,12 @@ export function initWorker({ canvas, binarySegBuffer, multiclassSegBuffer, handB
 // Swap which segmenter runs on subsequent frames. 'binary' | 'multiclass'.
 export function setActiveModel(which) {
   worker.postMessage({ type: 'setModel', model: which });
+}
+
+// Set RVM input-resolution preset. 'quality' | 'balanced' | 'fast'.
+// Safe before RVM is loaded — worker persists the setting.
+export function setRvmQuality(quality) {
+  worker.postMessage({ type: 'setRvmQuality', quality });
 }
 
 // Post a cam frame + current render params (+ optional inference flags) to

@@ -3,7 +3,7 @@
 // (streaming) so we can show real byte progress, then pass the buffers to
 // MediaPipe via `modelAssetBuffer` — no second download.
 
-import { ARENAS, BINARY_SEG_URL, MULTICLASS_SEG_URL, HAND_MODEL_URL, WASM_URL } from './config.js';
+import { ARENAS, BINARY_SEG_URL, MULTICLASS_SEG_URL, HAND_MODEL_URL, WASM_URL, RVM_MODEL_URL, U2NETP_MODEL_URL, SILUETA_MODEL_URL, MODNET_MODEL_URL } from './config.js';
 import { arenaImages, loadBackground } from './backgrounds.js';
 import { initWorker } from './worker-client.js';
 import {
@@ -71,6 +71,14 @@ export async function preload(offscreenCanvas) {
     canvas: offscreenCanvas,
     binarySegBuffer, multiclassSegBuffer, handBuffer,
     wasmBaseUrl,
+    // Absolute URLs so the worker's fetch resolves against the page origin,
+    // not the worker's module base.
+    onnxModelUrls: {
+      rvm:     new URL(RVM_MODEL_URL,     location.href).href,
+      u2netp:  new URL(U2NETP_MODEL_URL,  location.href).href,
+      silueta: new URL(SILUETA_MODEL_URL, location.href).href,
+      modnet:  new URL(MODNET_MODEL_URL,  location.href).href,
+    },
   });
   items[0].buffer = null;
   items[1].buffer = null;
