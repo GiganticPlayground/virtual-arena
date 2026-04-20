@@ -207,8 +207,15 @@ async function ensureORT() {
   ortModule = await import('../ort/ort.jspi.min.mjs');
   // Point the WASM loader at our vendored /ort/ dir. Trailing slash matters.
   ortModule.env.wasm.wasmPaths = new URL('../ort/', import.meta.url).href;
-  // GH Pages has no COOP/COEP, so SharedArrayBuffer/threading isn't available.
-  ortModule.env.wasm.numThreads = 1;
+  // Multithreaded WASM needs SharedArrayBuffer, which only exists when the page
+  // is cross-origin-isolated (COOP + COEP). GH Pages can't set those headers;
+  // local `serve` picks them up from docs/serve.json. Fall back to single-thread
+  // when isolation isn't active so the worker still runs.
+  const canThread = typeof SharedArrayBuffer !== 'undefined'
+                 && (globalThis.crossOriginIsolated ?? true);
+  ortModule.env.wasm.numThreads = canThread
+    ? Math.min(navigator.hardwareConcurrency || 4, 8)
+    : 1;
   return ortModule;
 }
 
