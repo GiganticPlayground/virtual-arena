@@ -5,14 +5,14 @@
 
 import {
   canvas, video, fpsEl, infEl, toggleBtn,
-  featherInput, featherVal, mirrorInput, foamToggle,
+  featherInput, featherVal, mirrorInput, foamToggle, handCountSel,
   infRateInput, infRateVal, sourceSel, uploadVideoInput,
   camSize, camSizeVal, camX, camXVal, camY, camYVal,
   modelSel, rvmQualitySel, trimInput, trimVal,
   progressSub, progressLabel,
   showError, clearError,
 } from './dom.js';
-import { postFrame, getLandmarks, clearLandmarks, onRender, onInfer, setActiveModel, setRvmQuality, onRvmStatus } from './worker-client.js';
+import { postFrame, getLandmarks, clearLandmarks, onRender, onInfer, setActiveModel, setRvmQuality, setNumHands, onRvmStatus, canInfer } from './worker-client.js';
 import { startSource, teardownSource } from './source.js';
 import { applyFoam, hideFoamFrom } from './foam.js';
 import { populateArenaSelect, wireArenaSelect, wireBackgroundUpload } from './backgrounds.js';
@@ -44,6 +44,7 @@ modelSel.addEventListener('change',    () => {
 });
 rvmQualitySel.addEventListener('change', () => { setRvmQuality(rvmQualitySel.value); });
 rvmQualitySel.disabled = modelSel.value !== 'rvm';
+handCountSel.addEventListener('change', () => { setNumHands(+handCountSel.value); });
 
 // Surface ONNX model (first-time) load state in the status box so the
 // user sees why the cutout hasn't switched yet. Subsequent toggles are
@@ -200,7 +201,9 @@ function loop() {
   }
 
   // Decide whether this tick's frame also carries an inference request.
-  const wantInfer = (now - lastInferenceMs) >= 1000 / +infRateInput.value;
+  // canInfer() gates on the worker's inference in-flight — render keeps
+  // flowing at rAF rate while a slow ONNX pass is still running.
+  const wantInfer = canInfer() && (now - lastInferenceMs) >= 1000 / +infRateInput.value;
   const foam = foamToggle.checked;
   const wantSeg   = wantInfer && (foam ?  nextIsSeg : true);
   const wantHands = wantInfer && (foam ? !nextIsSeg : false);

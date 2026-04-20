@@ -17,6 +17,7 @@ export const uploadInput      = $('upload');
 export const uploadVideoInput = $('uploadVideo');
 export const foamToggle       = $('foam');
 export const foamLayer        = $('foam-layer');
+export const handCountSel     = $('handCount');
 export const infRateInput     = $('infRate');
 export const infRateVal       = $('infRateVal');
 export const sourceSel        = $('source');

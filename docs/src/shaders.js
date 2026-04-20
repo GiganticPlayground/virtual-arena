@@ -60,16 +60,24 @@ void main() {
   // texels from center; inner taps interpolate in between. 25 taps gives
   // 26 discrete m levels, smooth enough for u_feather to visibly widen
   // the soft silhouette edge from hard (feather~0) to very soft (feather=5).
-  vec2 texel = 1.0 / u_maskSize;
-  float scale = max(u_feather, 0.0001) * 0.5;
-  float m = 0.0;
-  for (int dy = -2; dy <= 2; ++dy) {
-    for (int dx = -2; dx <= 2; ++dx) {
-      vec2 ofs = vec2(float(dx), float(dy)) * texel * scale;
-      m += sampleMask(camUv + ofs);
+  // Uniform branch: when feather is ~0 the kernel collapses to a single tap,
+  // so skip the 25 texture reads entirely. GPUs treat a uniform branch as
+  // essentially free across a warp.
+  float m;
+  if (u_feather < 0.01) {
+    m = sampleMask(camUv);
+  } else {
+    vec2 texel = 1.0 / u_maskSize;
+    float scale = u_feather * 0.5;
+    m = 0.0;
+    for (int dy = -2; dy <= 2; ++dy) {
+      for (int dx = -2; dx <= 2; ++dx) {
+        vec2 ofs = vec2(float(dx), float(dy)) * texel * scale;
+        m += sampleMask(camUv + ofs);
+      }
     }
+    m /= 25.0;
   }
-  m /= 25.0;
 
   // Derive alpha. Categorical mode: smoothstep across discrete kernel
   // levels with a user-trim band shift. Continuous mode (RVM): the kernel

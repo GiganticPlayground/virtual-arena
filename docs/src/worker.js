@@ -68,17 +68,19 @@ let onnxCtx       = null;
 // preset at runtime.
 // `postProcess` selects how the raw output maps to [0,1] alpha:
 //   'minmax'  — rembg-style per-frame rescale; good for saliency nets whose
-//               output range drifts (u2netp, silueta, modnet).
+//               output range drifts (u2netp, silueta).
 //   'sigmoid' — element-wise 1/(1+e^-x); correct for graphs whose last op is
 //               a raw logit (BiRefNet). Using minmax here would amplify noise
 //               on frames with no strong foreground.
+//   'scale'   — direct v*255; for models whose output is already in [0,1]
+//               (modnet). Skips the two-pass min/max scan.
 const SIMPLE_ONNX_MODELS = {
   u2netp:  { mean: [0.485, 0.456, 0.406], std: [0.229, 0.224, 0.225], eps: ['webgpu', 'wasm'], postProcess: 'minmax' },
   silueta: { mean: [0.485, 0.456, 0.406], std: [0.229, 0.224, 0.225], eps: ['webgpu', 'wasm'], postProcess: 'minmax' },
   // MODNet was trained with normalization to [-1, 1] (mean=0.5, std=0.5),
-  // not ImageNet. Its output is already in [0, 1], so the per-frame
-  // min-max normalization is harmless here.
-  modnet:  { mean: [0.5, 0.5, 0.5],       std: [0.5, 0.5, 0.5],       eps: ['webgpu', 'wasm'], postProcess: 'minmax' },
+  // not ImageNet. Its output is already in [0, 1], so a direct scale is
+  // correct and cheaper than the two-pass minmax.
+  modnet:  { mean: [0.5, 0.5, 0.5],       std: [0.5, 0.5, 0.5],       eps: ['webgpu', 'wasm'], postProcess: 'scale' },
 };
 
 // Input-resolution presets. Only applies to RVM, which was exported with
@@ -115,6 +117,23 @@ function ensureOnnxCanvas(w, h) {
   }
 }
 
+// Scratch buffers shared across consecutive simpleOnnxInfer/rvmInfer calls.
+// Reused rather than reallocated to cut GC pressure in the hot path. The
+// inference gate on main (inferBusy) guarantees no concurrent access, so
+// a single buffer per size is safe.
+let onnxSrcBuf     = null;  // Float32Array(n*3) input plane
+let onnxSrcSize    = 0;      // n = W*H of the last alloc
+let onnxOutBytes   = null;  // Uint8Array(n) mask bytes
+let onnxOutSize    = 0;
+function ensureSrcBuf(n) {
+  if (onnxSrcSize !== n) { onnxSrcBuf = new Float32Array(n * 3); onnxSrcSize = n; }
+  return onnxSrcBuf;
+}
+function ensureOutBuf(n) {
+  if (onnxOutSize !== n) { onnxOutBytes = new Uint8Array(n); onnxOutSize = n; }
+  return onnxOutBytes;
+}
+
 // Per-model inference-time logging (first N frames). Helps spot silent
 // fallbacks from WebGPU to WASM and confirm whether a "slow" model is
 // slow because of heavy compute or because the EP didn't take.
@@ -134,7 +153,7 @@ async function simpleOnnxInfer(frame, cfg, session) {
   onnxCtx.drawImage(frame, 0, 0, W, H);
   const d = onnxCtx.getImageData(0, 0, W, H).data;
   const n = W * H;
-  const src = new Float32Array(n * 3);
+  const src = ensureSrcBuf(n);
   const [mr, mg, mb] = cfg.mean, [sr, sg, sb] = cfg.std;
   for (let i = 0; i < n; i++) {
     src[i]         = (d[i * 4]     / 255 - mr) / sr;  // R plane
@@ -150,11 +169,18 @@ async function simpleOnnxInfer(frame, cfg, session) {
     preferredOutputLocation: 'cpu',
   });
   const outData = await out[outputName].getData();  // Float32Array, [1,1,H,W]
-  const bytes = new Uint8Array(outData.length);
+  const bytes = ensureOutBuf(outData.length);
 
   if (cfg.postProcess === 'sigmoid') {
     for (let i = 0; i < outData.length; i++) {
       const v = (1 / (1 + Math.exp(-outData[i]))) * 255;
+      bytes[i] = v < 0 ? 0 : v > 255 ? 255 : v | 0;
+    }
+  } else if (cfg.postProcess === 'scale') {
+    // Direct 0..1 → 0..255. Used for models (modnet) whose output is
+    // already normalized; skips the two-pass min/max scan.
+    for (let i = 0; i < outData.length; i++) {
+      const v = outData[i] * 255;
       bytes[i] = v < 0 ? 0 : v > 255 ? 255 : v | 0;
     }
   } else {
@@ -246,7 +272,7 @@ async function rvmInfer(frame) {
   const imgData = onnxCtx.getImageData(0, 0, W, H);
   const d = imgData.data;
   const n = W * H;
-  const src = new Float32Array(n * 3);
+  const src = ensureSrcBuf(n);
   for (let i = 0; i < n; i++) {
     src[i]         = d[i * 4]     / 255;  // R plane
     src[i + n]     = d[i * 4 + 1] / 255;  // G plane
@@ -301,7 +327,7 @@ async function rvmInfer(frame) {
     rvmLoggedStats = true;
   }
 
-  const bytes = new Uint8Array(pha.length);
+  const bytes = ensureOutBuf(pha.length);
   for (let i = 0; i < pha.length; i++) {
     const v = pha[i] * 255;
     bytes[i] = v < 0 ? 0 : v > 255 ? 255 : v | 0;
@@ -439,9 +465,17 @@ self.onmessage = async (e) => {
       handLandmarker = await HandLandmarker.createFromOptions(vision, {
         baseOptions: { modelAssetBuffer: msg.handBuffer, delegate: 'GPU' },
         runningMode: 'VIDEO',
-        numHands: 4,
+        numHands: 2,
       });
       self.postMessage({ type: 'ready' });
+      return;
+    }
+
+    if (msg.type === 'setNumHands') {
+      const n = Math.max(1, Math.min(4, msg.numHands | 0));
+      if (handLandmarker) {
+        await handLandmarker.setOptions({ numHands: n });
+      }
       return;
     }
 
@@ -507,22 +541,33 @@ self.onmessage = async (e) => {
 
       uploadCam(frame);
 
-      if (msg.wantSeg) {
+      const wantSeg   = !!msg.wantSeg;
+      const wantHands = !!msg.wantHands;
+
+      // ONNX inference runs in parallel with the render path. The sync
+      // preamble (drawImage + getImageData + tensor build) completes before
+      // the function hits its first await, so the frame is safe to close
+      // immediately after. The returned promise finishes later and uploads
+      // the new mask; the next render tick picks it up.
+      //
+      // MediaPipe paths (activeSegmenter, handLandmarker) are synchronous and
+      // still run before draw so the fresh mask lands on the current frame.
+      let segPromise = null;
+
+      if (wantSeg) {
         if (activeModel === 'rvm' && onnxSessions.rvm) {
-          // Async ORT run. RVM is slow compared to MediaPipe; worker-busy
-          // gate on main will naturally throttle the outer FPS.
-          // Returns null if quality changed mid-inference — we skip the
-          // mask upload that tick so the stale matte isn't displayed.
           const t0 = performance.now();
-          const result = await rvmInfer(frame);
-          logInferTime('rvm', performance.now() - t0);
-          if (result) uploadMask(result.data, result.w, result.h);
+          segPromise = rvmInfer(frame).then(result => {
+            logInferTime('rvm', performance.now() - t0);
+            if (result) uploadMask(result.data, result.w, result.h);
+          });
         } else if (SIMPLE_ONNX_MODELS[activeModel] && onnxSessions[activeModel]) {
           const cfg = { ...SIMPLE_ONNX_MODELS[activeModel], ...onnxDims(activeModel) };
           const t0 = performance.now();
-          const result = await simpleOnnxInfer(frame, cfg, onnxSessions[activeModel]);
-          logInferTime(activeModel, performance.now() - t0);
-          uploadMask(result.data, result.w, result.h);
+          segPromise = simpleOnnxInfer(frame, cfg, onnxSessions[activeModel]).then(result => {
+            logInferTime(activeModel, performance.now() - t0);
+            uploadMask(result.data, result.w, result.h);
+          });
         } else if (activeSegmenter) {
           activeSegmenter.segmentForVideo(frame, msg.ts, (r) => {
             const cm = r.categoryMask;
@@ -537,7 +582,7 @@ self.onmessage = async (e) => {
       }
 
       let landmarks = null;
-      if (msg.wantHands) {
+      if (wantHands) {
         const hr = handLandmarker.detectForVideo(frame, msg.ts);
         landmarks = hr?.landmarks ?? [];
       }
@@ -551,9 +596,27 @@ self.onmessage = async (e) => {
         type: 'rendered',
         ts: msg.ts,
         landmarks,
-        hadSeg:   !!msg.wantSeg,
-        hadHands: !!msg.wantHands,
       });
+
+      // Signal inference completion separately so main can release its
+      // inference gate independently of the render gate. For MediaPipe /
+      // hands-only the work is already done; post immediately.
+      if (wantSeg || wantHands) {
+        if (segPromise) {
+          segPromise.then(() => {
+            self.postMessage({ type: 'inferenceDone', ts: msg.ts });
+          }).catch(err => {
+            self.postMessage({
+              type: 'error',
+              stage: 'inference',
+              message: err?.message || String(err),
+              stack: err?.stack,
+            });
+          });
+        } else {
+          self.postMessage({ type: 'inferenceDone', ts: msg.ts });
+        }
+      }
       return;
     }
   } catch (err) {

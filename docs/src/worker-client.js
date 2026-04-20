@@ -11,9 +11,10 @@ const workerUrl = new URL('./worker.js', import.meta.url);
 workerUrl.searchParams.set('v', String(Date.now()));
 const worker = new Worker(workerUrl, { type: 'module' });
 
-let ready  = false;
-let busy   = false;   // one-in-flight gate
-let broken = false;   // latched on init/runtime errors
+let ready       = false;
+let renderBusy  = false;  // cleared on 'rendered' reply
+let inferBusy   = false;  // cleared on 'inferenceDone' reply
+let broken      = false;  // latched on init/runtime errors
 let lastLandmarks = [];
 
 let readyResolve;
@@ -24,8 +25,8 @@ const readyPromise = new Promise(r => { readyResolve = r; });
 let onRenderCb = null;
 export function onRender(cb) { onRenderCb = cb; }
 
-// Fires only when the 'rendered' reply carried seg or hands. main.js
-// uses this for the Infer FPS HUD.
+// Fires on every 'inferenceDone' reply (one per inference-carrying tick).
+// Drives the Infer FPS HUD.
 let onInferCb = null;
 export function onInfer(cb) { onInferCb = cb; }
 
@@ -34,23 +35,31 @@ export function onInfer(cb) { onInferCb = cb; }
 let onRvmStatusCb = null;
 export function onRvmStatus(cb) { onRvmStatusCb = cb; }
 
+// True when a new inference-carrying frame can be posted. Render and
+// inference have independent in-flight gates now, so main can keep posting
+// render-only frames while a slow ONNX pass is still running.
+export function canInfer() { return ready && !inferBusy && !broken; }
+
 worker.addEventListener('message', (e) => {
   const m = e.data;
   if (m.type === 'ready') {
     ready = true;
     readyResolve();
   } else if (m.type === 'rendered') {
-    busy = false;
+    renderBusy = false;
     // null => worker didn't run hand landmarker this tick (staggered);
     // keep the cached value. [] is a real "zero hands detected" result.
     if (m.landmarks != null) lastLandmarks = m.landmarks;
     onRenderCb?.();
-    if (m.hadSeg || m.hadHands) onInferCb?.();
+  } else if (m.type === 'inferenceDone') {
+    inferBusy = false;
+    onInferCb?.();
   } else if (m.type === 'rvmStatus') {
     onRvmStatusCb?.(m);
     if (m.status === 'error') showError(`RVM: ${m.message}`);
   } else if (m.type === 'error') {
-    busy = false;
+    renderBusy = false;
+    inferBusy  = false;
     if (m.stage === 'init') broken = true;
     showError(`Worker ${m.stage}: ${m.message}`);
     console.error('[worker]', m.stage, m.message, m.stack);
@@ -84,12 +93,19 @@ export function setRvmQuality(quality) {
   worker.postMessage({ type: 'setRvmQuality', quality });
 }
 
+// Set max hands for the MediaPipe hand landmarker. Integer 1..4.
+export function setNumHands(n) {
+  worker.postMessage({ type: 'setNumHands', numHands: n });
+}
+
 // Post a cam frame + current render params (+ optional inference flags) to
 // the worker. Returns true iff a frame was actually sent. One-in-flight:
 // caller's rAF will skip while the worker is busy.
 export function postFrame(videoEl, ts, params, wantSeg, wantHands) {
-  if (!ready || busy || broken) return false;
-  busy = true;
+  if (!ready || renderBusy || broken) return false;
+  renderBusy = true;
+  const willInfer = !!(wantSeg || wantHands);
+  if (willInfer) inferBusy = true;
   try {
     if (typeof VideoFrame !== 'undefined') {
       const frame = new VideoFrame(videoEl);  // zero-copy on Chrome
@@ -105,13 +121,15 @@ export function postFrame(videoEl, ts, params, wantSeg, wantHands) {
           [bmp],
         );
       }).catch(err => {
-        busy = false;
+        renderBusy = false;
+        if (willInfer) inferBusy = false;
         console.warn('Frame capture failed', err);
       });
     }
     return true;
   } catch (err) {
-    busy = false;
+    renderBusy = false;
+    if (willInfer) inferBusy = false;
     console.warn('Frame capture failed', err);
     return false;
   }

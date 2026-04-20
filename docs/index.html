@@ -143,6 +143,16 @@
         <span class="help" data-tip="Overlay animated foam fingers on detected hands. Uses MediaPipe hand landmarker — adds inference cost.">?</span>
       </label>
       <label>
+        Hands
+        <select id="handCount">
+          <option value="1">1</option>
+          <option value="2" selected>2</option>
+          <option value="3">3</option>
+          <option value="4">4</option>
+        </select>
+        <span class="help" data-tip="Maximum hands MediaPipe will track. Higher = more people can wave foam fingers, but each hand costs inference time. Default is 2 (one person's hands).">?</span>
+      </label>
+      <label>
         Inference Rate
         <input id="infRate" type="range" min="5" max="120" step="5" value="30">
         <span id="infRateVal">30</span>&nbsp;Hz
