@@ -62,6 +62,19 @@ select { background: #222; color: #eee; border: 1px solid #444; padding: 4px 6px
 }
 .upload-btn:hover { background: #468; }
 
+/* Small inline link next to the Segmenter Model picker. Opens the
+   standalone model-comparison page in a new tab. */
+.model-compare-link {
+  font-size: 11px;
+  color: #9cd;
+  text-decoration: none;
+  padding: 2px 6px;
+  border-radius: 3px;
+  border: 1px solid rgba(156, 204, 221, 0.3);
+  white-space: nowrap;
+}
+.model-compare-link:hover { background: rgba(156, 204, 221, 0.12); color: #bef; }
+
 /* Inline ? help icon with hover tooltip. Pure CSS — no JS. */
 .help {
   display: inline-flex;

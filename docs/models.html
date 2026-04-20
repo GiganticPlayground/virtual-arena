@@ -1,0 +1,430 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Virtual Arena — Segmenter Model Comparison</title>
+<style>
+  :root { color-scheme: dark; }
+  html, body {
+    margin: 0; padding: 0;
+    background: #000; color: #eee;
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+    font-size: 14px; line-height: 1.5;
+  }
+  header {
+    padding: 32px 24px 16px;
+    border-bottom: 1px solid rgba(255,255,255,0.12);
+  }
+  header h1 { margin: 0 0 6px; font-size: 22px; font-weight: 600; }
+  header p  { margin: 0; color: #999; max-width: 780px; font-size: 13px; }
+  header a  { color: #6be; text-decoration: none; }
+  header a:hover { text-decoration: underline; }
+
+  main {
+    padding: 24px 16px 48px;
+    overflow-x: auto;
+  }
+  .grid {
+    display: grid;
+    grid-template-columns: repeat(6, minmax(240px, 1fr));
+    gap: 14px;
+    min-width: 1440px;
+  }
+  .col {
+    background: #111;
+    border: 1px solid rgba(255,255,255,0.10);
+    border-radius: 8px;
+    padding: 16px;
+    display: flex; flex-direction: column;
+  }
+  .col.recommended { border-color: rgba(42, 170, 119, 0.55); box-shadow: 0 0 0 1px rgba(42, 170, 119, 0.25); }
+
+  .name {
+    font-size: 16px; font-weight: 600;
+    margin-bottom: 2px;
+  }
+  .name .sub {
+    display: block;
+    font-size: 11px; font-weight: 400; color: #888;
+    margin-top: 2px;
+  }
+  .badges {
+    display: flex; flex-wrap: wrap; gap: 4px;
+    margin: 10px 0 14px;
+  }
+  .badge {
+    font-size: 10px; font-weight: 600;
+    padding: 2px 7px; border-radius: 10px;
+    background: rgba(255,255,255,0.08);
+    color: #ccc;
+    letter-spacing: 0.02em;
+    text-transform: uppercase;
+  }
+  .badge.gpu   { background: rgba(100, 180, 255, 0.12); color: #9cd; }
+  .badge.cpu   { background: rgba(255, 150, 100, 0.12); color: #fc9; }
+  .badge.mp    { background: rgba(42, 170, 119, 0.15);  color: #8d9; }
+  .badge.onnx  { background: rgba(150, 130, 220, 0.15); color: #bac; }
+  .badge.soft  { background: rgba(200, 200, 100, 0.12); color: #dd9; }
+
+  dl { margin: 0; padding: 0; }
+  dt {
+    font-size: 10px; font-weight: 600;
+    letter-spacing: 0.06em; text-transform: uppercase;
+    color: #888; margin-top: 12px;
+  }
+  dd { margin: 2px 0 0; padding: 0; color: #ddd; }
+  dd.big { font-size: 15px; font-weight: 600; color: #fff; }
+  dd ul { margin: 4px 0 0; padding-left: 18px; }
+  dd ul li { margin: 2px 0; }
+  dd .muted { color: #999; font-size: 12px; }
+
+  .perf {
+    margin-top: auto;
+    padding: 10px 12px;
+    background: rgba(255,255,255,0.03);
+    border: 1px solid rgba(255,255,255,0.08);
+    border-radius: 6px;
+    font-family: ui-monospace, Menlo, monospace;
+    font-size: 12px;
+    color: #ccc;
+  }
+  .perf .label { color: #888; font-size: 10px; text-transform: uppercase; letter-spacing: 0.05em; }
+  .perf .big   { color: #fff; font-size: 14px; }
+
+  footer {
+    padding: 16px 24px 32px;
+    color: #777; font-size: 12px;
+    border-top: 1px solid rgba(255,255,255,0.08);
+    max-width: 900px;
+  }
+  footer h2 { font-size: 13px; color: #bbb; margin: 12px 0 4px; font-weight: 600; }
+  footer p  { margin: 4px 0; }
+</style>
+</head>
+<body>
+  <header>
+    <h1>Segmenter model comparison</h1>
+    <p>
+      Six background-removal models shipped in the prototype. Each runs through a different
+      execution path (MediaPipe TFLite vs. onnxruntime-web; GPU vs. CPU delegate).
+      Back to the <a href="./index.html">prototype</a>.
+    </p>
+  </header>
+
+  <main>
+    <div class="grid">
+
+      <!-- SILHOUETTE -->
+      <div class="col">
+        <div class="name">Silhouette<span class="sub">selfie_segmenter</span></div>
+        <div class="badges">
+          <span class="badge mp">MediaPipe</span>
+          <span class="badge gpu">GPU</span>
+          <span class="badge">Binary</span>
+        </div>
+        <dl>
+          <dt>Released</dt>
+          <dd>2021 (Google MediaPipe)</dd>
+
+          <dt>Architecture</dt>
+          <dd>TFLite binary segmenter</dd>
+
+          <dt>Size</dt>
+          <dd class="big">244 KB</dd>
+
+          <dt>Input</dt>
+          <dd>256 × 256</dd>
+
+          <dt>Mask type</dt>
+          <dd>Categorical (person / background)</dd>
+
+          <dt>Good at</dt>
+          <dd>
+            <ul>
+              <li>Fastest path, multi-person</li>
+              <li>Near-zero download</li>
+              <li>Default for a reason</li>
+            </ul>
+          </dd>
+
+          <dt>Tradeoffs</dt>
+          <dd>
+            <ul>
+              <li>Hard-edged mask</li>
+              <li>Cuts hair as a flat silhouette</li>
+              <li>Chair backs bleed through</li>
+            </ul>
+          </dd>
+        </dl>
+        <div class="perf" style="margin-top:14px">
+          <div class="label">Observed</div>
+          <div>Sync inference, mask lands on current frame. Fastest model available.</div>
+        </div>
+      </div>
+
+      <!-- MULTICLASS -->
+      <div class="col">
+        <div class="name">Multiclass<span class="sub">selfie_multiclass_256x256</span></div>
+        <div class="badges">
+          <span class="badge mp">MediaPipe</span>
+          <span class="badge gpu">GPU</span>
+          <span class="badge">Categorical</span>
+        </div>
+        <dl>
+          <dt>Released</dt>
+          <dd>2023 (MediaPipe Tasks API)</dd>
+
+          <dt>Architecture</dt>
+          <dd>TFLite multiclass segmenter</dd>
+
+          <dt>Size</dt>
+          <dd class="big">16 MB</dd>
+
+          <dt>Input</dt>
+          <dd>256 × 256</dd>
+
+          <dt>Mask type</dt>
+          <dd>Categorical: hair / body-skin / face-skin / clothes / others / background</dd>
+
+          <dt>Good at</dt>
+          <dd>
+            <ul>
+              <li>Per-region styling (recolor hair, clothes, etc.)</li>
+              <li>Still GPU-accelerated</li>
+            </ul>
+          </dd>
+
+          <dt>Tradeoffs</dt>
+          <dd>
+            <ul>
+              <li>Larger download than Silhouette</li>
+              <li>Marginally slower</li>
+              <li>Still categorical — no soft matte</li>
+            </ul>
+          </dd>
+        </dl>
+        <div class="perf" style="margin-top:14px">
+          <div class="label">Observed</div>
+          <div>Roughly Silhouette speed; sync inference.</div>
+        </div>
+      </div>
+
+      <!-- RVM -->
+      <div class="col">
+        <div class="name">RVM<span class="sub">Robust Video Matting</span></div>
+        <div class="badges">
+          <span class="badge onnx">ONNX</span>
+          <span class="badge cpu">WASM only</span>
+          <span class="badge soft">Soft matte</span>
+          <span class="badge">Recurrent</span>
+        </div>
+        <dl>
+          <dt>Released</dt>
+          <dd>2021 paper (WACV 2022) — Peter Lin et al.</dd>
+
+          <dt>Architecture</dt>
+          <dd>MobileNetV3 backbone + recurrent decoder</dd>
+
+          <dt>Size</dt>
+          <dd class="big">15 MB</dd>
+
+          <dt>Input</dt>
+          <dd>Variable: 512×288, 384×224, 256×160 presets</dd>
+
+          <dt>Mask type</dt>
+          <dd>Continuous alpha matte (temporally stable)</dd>
+
+          <dt>Good at</dt>
+          <dd>
+            <ul>
+              <li>Video — temporally consistent edges via recurrent state</li>
+              <li>Hair, fine detail</li>
+              <li>Best choice for pre-recorded footage</li>
+            </ul>
+          </dd>
+
+          <dt>Tradeoffs</dt>
+          <dd>
+            <ul>
+              <li>Pinned to WASM — WebGPU decoder numerics diverge</li>
+              <li>Single-threaded (GH Pages blocks SharedArrayBuffer)</li>
+              <li>Single-subject</li>
+            </ul>
+          </dd>
+        </dl>
+        <div class="perf" style="margin-top:14px">
+          <div class="label">Observed</div>
+          <div>~3–8 FPS infer depending on quality preset. CPU-bound until multithreaded WASM unblocks.</div>
+        </div>
+      </div>
+
+      <!-- U2NET-P -->
+      <div class="col recommended">
+        <div class="name">U²-Net-p<span class="sub">portrait variant, rembg fork</span></div>
+        <div class="badges">
+          <span class="badge onnx">ONNX</span>
+          <span class="badge gpu">WebGPU</span>
+          <span class="badge soft">Soft matte</span>
+          <span class="badge">Recommended</span>
+        </div>
+        <dl>
+          <dt>Released</dt>
+          <dd>2020 paper — Qin et al. (small variant)</dd>
+
+          <dt>Architecture</dt>
+          <dd>Nested U-Net saliency detector</dd>
+
+          <dt>Size</dt>
+          <dd class="big">4 MB</dd>
+
+          <dt>Input</dt>
+          <dd>Fixed 320 × 320</dd>
+
+          <dt>Mask type</dt>
+          <dd>Continuous alpha (saliency, minmax-rescaled per frame)</dd>
+
+          <dt>Good at</dt>
+          <dd>
+            <ul>
+              <li>Smallest ONNX download (4 MB)</li>
+              <li>Interactive on WebGPU</li>
+              <li>Good single-subject cutout</li>
+            </ul>
+          </dd>
+
+          <dt>Tradeoffs</dt>
+          <dd>
+            <ul>
+              <li>Saliency-trained — output range drifts per frame</li>
+              <li>Multi-subject weak</li>
+              <li>Fixed input shape — no quality knob</li>
+            </ul>
+          </dd>
+        </dl>
+        <div class="perf" style="margin-top:14px">
+          <div class="label">Measured this session</div>
+          <div class="big">~43 ms / inference</div>
+          <div>~22 FPS infer · ~60+ FPS render (decoupled)</div>
+        </div>
+      </div>
+
+      <!-- MODNET -->
+      <div class="col">
+        <div class="name">MODNet<span class="sub">trimap-free portrait matting</span></div>
+        <div class="badges">
+          <span class="badge onnx">ONNX</span>
+          <span class="badge gpu">WebGPU</span>
+          <span class="badge soft">Soft matte</span>
+          <span class="badge">Portrait</span>
+        </div>
+        <dl>
+          <dt>Released</dt>
+          <dd>2020 / 2022 paper — Ke et al.</dd>
+
+          <dt>Architecture</dt>
+          <dd>Encoder/decoder + Objective Function Decomposition, trimap-free</dd>
+
+          <dt>Size</dt>
+          <dd class="big">26 MB</dd>
+
+          <dt>Input</dt>
+          <dd>Fixed 512 × 512</dd>
+
+          <dt>Mask type</dt>
+          <dd>Continuous alpha matte (output already in [0,1], direct scale)</dd>
+
+          <dt>Good at</dt>
+          <dd>
+            <ul>
+              <li>True alpha matting (not saliency)</li>
+              <li>Sharp portraits, well-behaved output</li>
+              <li>Good quality at interactive rates</li>
+            </ul>
+          </dd>
+
+          <dt>Tradeoffs</dt>
+          <dd>
+            <ul>
+              <li>Portrait-only — trained on single subjects</li>
+              <li>512² input = more GPU work than U²-Net-p</li>
+              <li>Larger download</li>
+            </ul>
+          </dd>
+        </dl>
+        <div class="perf" style="margin-top:14px">
+          <div class="label">Observed</div>
+          <div>Similar order to U²-Net-p, with larger per-tensor cost from 512² input.</div>
+        </div>
+      </div>
+
+      <!-- SILUETA -->
+      <div class="col">
+        <div class="name">Silueta<span class="sub">U²-Net family, silhouette-tuned</span></div>
+        <div class="badges">
+          <span class="badge onnx">ONNX</span>
+          <span class="badge cpu">WebGPU → WASM</span>
+          <span class="badge soft">Soft matte</span>
+          <span class="badge">Reference</span>
+        </div>
+        <dl>
+          <dt>Released</dt>
+          <dd>~2021, silueta author (rembg ecosystem)</dd>
+
+          <dt>Architecture</dt>
+          <dd>Nested U-Net, silhouette-extraction weights</dd>
+
+          <dt>Size</dt>
+          <dd class="big">42 MB</dd>
+
+          <dt>Input</dt>
+          <dd>Fixed 320 × 320</dd>
+
+          <dt>Mask type</dt>
+          <dd>Continuous alpha (saliency, minmax-rescaled)</dd>
+
+          <dt>Good at</dt>
+          <dd>
+            <ul>
+              <li>Highest matte quality of the ONNX models</li>
+              <li>Multi-subject capable</li>
+            </ul>
+          </dd>
+
+          <dt>Tradeoffs</dt>
+          <dd>
+            <ul>
+              <li>Graph hits an op the WebGPU EP can't accelerate — falls back to CPU</li>
+              <li>Largest download</li>
+              <li>~0.2 FPS in the fallback case</li>
+            </ul>
+          </dd>
+        </dl>
+        <div class="perf" style="margin-top:14px">
+          <div class="label">Observed</div>
+          <div>~0.2 FPS when graph falls to CPU. Use as a quality reference, not interactively.</div>
+        </div>
+      </div>
+
+    </div>
+  </main>
+
+  <footer>
+    <h2>How to read the mask types</h2>
+    <p>
+      <strong>Categorical</strong> (Silhouette / Multiclass) emits an integer class per pixel;
+      the compositor thresholds it. Hard edges.
+    </p>
+    <p>
+      <strong>Continuous alpha</strong> (RVM / U²-Net-p / MODNet / Silueta) emits a float matte;
+      the compositor averages it through the feather kernel for soft edges.
+    </p>
+
+    <h2>How to pick one</h2>
+    <p>Default demo: <strong>Silhouette</strong>. Best interactive soft edge: <strong>U²-Net-p</strong>.
+       Best sharpness at interactive FPS: <strong>MODNet</strong>. Best temporal stability on video:
+       <strong>RVM</strong> (once multithreaded WASM is available).
+       <strong>Silueta</strong>: screenshot-only reference.</p>
+  </footer>
+</body>
+</html>
