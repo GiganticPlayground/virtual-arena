@@ -110,7 +110,7 @@ button.pulse { animation: pulse 1.6s ease-out infinite; }
 }
 .foam {
   position: absolute; left: 0; top: 0;
-  width: 100px; height: 180px;
+  width: 120px; height: 180px;
   transform-origin: 50% 92%;
   will-change: transform;
   user-select: none;
