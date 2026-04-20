@@ -49,33 +49,39 @@
     <div class="group">
       <button id="toggle" disabled>Start</button>
       <label>
-        Source
+        Source Video
         <select id="source">
           <option value="webcam">Webcam</option>
           <option value="./input_videos/1.mp4">Video 1</option>
           <option value="./input_videos/2.mp4">Video 2</option>
           <option value="./input_videos/3.mp4">Video 3</option>
           <option value="./input_videos/4.mp4">Video 4</option>
+          <option value="./input_videos/5.mp4">Video 5</option>
         </select>
+        <span class="help" data-tip="Choose the live webcam feed or one of the bundled sample videos as the input.">?</span>
       </label>
-      <label class="upload-btn" title="Upload your own video file to use as the input">
+      <label class="upload-btn">
         Upload Video
         <input id="uploadVideo" type="file" accept="video/*" hidden>
+        <span class="help" data-tip="Upload your own video file to use as the input instead of the webcam or bundled videos.">?</span>
       </label>
-      <label title="Scale of the source inside the canvas">
-        Size
+      <label>
+        Source Size
         <input id="camSize" type="range" min="0.1" max="2" step="0.05" value="1">
         <span id="camSizeVal">1.00</span>
+        <span class="help" data-tip="Scale of the source (person) inside the canvas. 1.0 = native, higher = zoomed in.">?</span>
       </label>
-      <label title="Horizontal position (-1 = left edge, 0 = center, +1 = right edge)">
-        X
+      <label>
+        Source X
         <input id="camX" type="range" min="-1" max="1" step="0.02" value="0">
         <span id="camXVal">0.00</span>
+        <span class="help" data-tip="Horizontal position of the source. −1 = left edge, 0 = center, +1 = right edge.">?</span>
       </label>
-      <label title="Vertical position (-1 = bottom, 0 = center, +1 = top)">
-        Y
+      <label>
+        Source Y
         <input id="camY" type="range" min="-1" max="1" step="0.02" value="0">
         <span id="camYVal">0.00</span>
+        <span class="help" data-tip="Vertical position of the source. −1 = bottom, 0 = center, +1 = top.">?</span>
       </label>
     </div>
     <span class="divider"></span>
@@ -83,13 +89,15 @@
       <label>
         Background
         <select id="arena"></select>
+        <span class="help" data-tip="Pick a preloaded arena background to composite behind the subject.">?</span>
       </label>
-      <label class="upload-btn" title="Upload your own background image">
-        Upload
+      <label class="upload-btn">
+        Upload Background
         <input id="upload" type="file" accept="image/*" hidden>
+        <span class="help" data-tip="Upload your own background image instead of using a preloaded arena.">?</span>
       </label>
-      <label title="Segmenter model. Silhouette / Multiclass: MediaPipe (fast, multi-person). U²-Net-p: ONNX on WebGPU, interactive single-subject matting. RVM: ONNX on WASM, recurrent single-subject matting. Silueta: ONNX, best quality but the graph falls back to CPU — ~0.2 FPS on this laptop — use as a quality reference, not interactive. First-time selection downloads the ONNX model.">
-        Model
+      <label>
+        Segmenter Model
         <select id="model">
           <option value="binary">Silhouette (MediaPipe, fast)</option>
           <option value="multiclass">Multiclass (MediaPipe)</option>
@@ -98,24 +106,28 @@
           <option value="modnet">MODNet (ONNX, 26 MB, interactive matting)</option>
           <option value="silueta">Silueta (ONNX, 42 MB, ~0.2 FPS — quality reference)</option>
         </select>
+        <span class="help" data-tip="Silhouette / Multiclass: MediaPipe (fast, multi-person). U²-Net-p: ONNX on WebGPU, interactive single-subject matting. RVM: ONNX on WASM, recurrent single-subject matting. Silueta: ONNX, best quality but falls back to CPU (~0.2 FPS) — quality reference, not interactive. First-time selection downloads the ONNX model.">?</span>
       </label>
-      <label title="RVM input resolution. Smaller = faster but coarser matte. Only RVM supports variable input; U²-Net-p and Silueta ship as fixed-shape 320×320 ONNX so this is disabled for them.">
+      <label>
         RVM Quality
         <select id="rvmQuality">
           <option value="quality">Quality (512×288)</option>
           <option value="balanced">Balanced (384×224)</option>
           <option value="fast">Fast (256×160)</option>
         </select>
+        <span class="help" data-tip="RVM input resolution. Smaller = faster but coarser matte. Only RVM supports variable input; U²-Net-p and Silueta ship as fixed-shape 320×320 ONNX so this is disabled for them.">?</span>
       </label>
       <label>
-        Feather
+        Edge Feather
         <input id="feather" type="range" min="0" max="5" step="0.1" value="1.5">
         <span id="featherVal">1.5</span>
+        <span class="help" data-tip="Softness of the mask edge, in pixels. Higher values blur the cutout border for a smoother blend with the background.">?</span>
       </label>
-      <label title="Silhouette trim. Positive tightens the mask (peels off chair backs and edge bleed); negative expands it (catches more hair).">
-        Trim
+      <label>
+        Edge Trim
         <input id="trim" type="range" min="-0.3" max="0.3" step="0.02" value="0">
         <span id="trimVal">0.00</span>
+        <span class="help" data-tip="Positive values tighten the mask (peels off chair backs and edge bleed); negative values expand it (catches more hair).">?</span>
       </label>
     </div>
     <span class="divider"></span>
@@ -123,15 +135,18 @@
       <label>
         <input id="mirror" type="checkbox" checked>
         Mirror
+        <span class="help" data-tip="Flip the source horizontally. Useful for webcam input so your movements match a mirror.">?</span>
       </label>
       <label>
         <input id="foam" type="checkbox">
         Foam Finger
+        <span class="help" data-tip="Overlay animated foam fingers on detected hands. Uses MediaPipe hand landmarker — adds inference cost.">?</span>
       </label>
-      <label title="Rate at which segmentation + hand tracking run. Lower = more headroom, higher = less mask lag.">
-        Inference
-        <input id="infRate" type="range" min="5" max="60" step="5" value="30">
+      <label>
+        Inference Rate
+        <input id="infRate" type="range" min="5" max="120" step="5" value="30">
         <span id="infRateVal">30</span>&nbsp;Hz
+        <span class="help" data-tip="How often segmentation + hand tracking run per second. Lower = more headroom for other work, higher = less mask lag behind motion.">?</span>
       </label>
     </div>
   </div>

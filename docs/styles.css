@@ -62,6 +62,58 @@ select { background: #222; color: #eee; border: 1px solid #444; padding: 4px 6px
 }
 .upload-btn:hover { background: #468; }
 
+/* Inline ? help icon with hover tooltip. Pure CSS — no JS. */
+.help {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 14px; height: 14px;
+  border-radius: 50%;
+  background: rgba(255,255,255,0.18);
+  color: #ddd;
+  font-size: 10px;
+  font-weight: 700;
+  line-height: 1;
+  cursor: help;
+  position: relative;
+  user-select: none;
+  flex-shrink: 0;
+}
+.help:hover { background: rgba(255,255,255,0.35); color: #fff; }
+.help:hover::after {
+  content: attr(data-tip);
+  position: absolute;
+  bottom: calc(100% + 8px);
+  left: 50%;
+  transform: translateX(-50%);
+  width: max-content;
+  max-width: 260px;
+  padding: 8px 10px;
+  background: #1a1a1a;
+  border: 1px solid #444;
+  border-radius: 4px;
+  color: #eee;
+  font-size: 12px;
+  font-weight: 400;
+  line-height: 1.45;
+  white-space: normal;
+  text-align: left;
+  z-index: 20;
+  pointer-events: none;
+  box-shadow: 0 4px 16px rgba(0,0,0,0.5);
+}
+.help:hover::before {
+  content: "";
+  position: absolute;
+  bottom: calc(100% + 2px);
+  left: 50%;
+  transform: translateX(-50%);
+  border: 6px solid transparent;
+  border-top-color: #444;
+  pointer-events: none;
+  z-index: 20;
+}
+
 /* Preload overlay: covers everything while we fetch models + arenas. */
 #preload {
   position: fixed; inset: 0; z-index: 100;
