@@ -66,13 +66,19 @@ let onnxCtx       = null;
 // WASM if WebGPU can't handle some op in the graph.
 // Default dims in each entry are overridden by the active ONNX_QUALITIES
 // preset at runtime.
+// `postProcess` selects how the raw output maps to [0,1] alpha:
+//   'minmax'  — rembg-style per-frame rescale; good for saliency nets whose
+//               output range drifts (u2netp, silueta, modnet).
+//   'sigmoid' — element-wise 1/(1+e^-x); correct for graphs whose last op is
+//               a raw logit (BiRefNet). Using minmax here would amplify noise
+//               on frames with no strong foreground.
 const SIMPLE_ONNX_MODELS = {
-  u2netp:  { mean: [0.485, 0.456, 0.406], std: [0.229, 0.224, 0.225], eps: ['webgpu', 'wasm'] },
-  silueta: { mean: [0.485, 0.456, 0.406], std: [0.229, 0.224, 0.225], eps: ['webgpu', 'wasm'] },
+  u2netp:  { mean: [0.485, 0.456, 0.406], std: [0.229, 0.224, 0.225], eps: ['webgpu', 'wasm'], postProcess: 'minmax' },
+  silueta: { mean: [0.485, 0.456, 0.406], std: [0.229, 0.224, 0.225], eps: ['webgpu', 'wasm'], postProcess: 'minmax' },
   // MODNet was trained with normalization to [-1, 1] (mean=0.5, std=0.5),
   // not ImageNet. Its output is already in [0, 1], so the per-frame
-  // min-max normalization in simpleOnnxInfer is harmless here.
-  modnet:  { mean: [0.5, 0.5, 0.5],       std: [0.5, 0.5, 0.5],       eps: ['webgpu', 'wasm'] },
+  // min-max normalization is harmless here.
+  modnet:  { mean: [0.5, 0.5, 0.5],       std: [0.5, 0.5, 0.5],       eps: ['webgpu', 'wasm'], postProcess: 'minmax' },
 };
 
 // Input-resolution presets. Only applies to RVM, which was exported with
@@ -144,19 +150,25 @@ async function simpleOnnxInfer(frame, cfg, session) {
     preferredOutputLocation: 'cpu',
   });
   const outData = await out[outputName].getData();  // Float32Array, [1,1,H,W]
-
-  // U²-Net outputs aren't guaranteed to be in [0,1]; rembg normalizes
-  // per-frame with min-max. We match that so the shader sees a clean alpha.
-  let omin = Infinity, omax = -Infinity;
-  for (let i = 0; i < outData.length; i++) {
-    if (outData[i] < omin) omin = outData[i];
-    if (outData[i] > omax) omax = outData[i];
-  }
-  const range = Math.max(omax - omin, 1e-6);
   const bytes = new Uint8Array(outData.length);
-  for (let i = 0; i < outData.length; i++) {
-    const v = ((outData[i] - omin) / range) * 255;
-    bytes[i] = v < 0 ? 0 : v > 255 ? 255 : v | 0;
+
+  if (cfg.postProcess === 'sigmoid') {
+    for (let i = 0; i < outData.length; i++) {
+      const v = (1 / (1 + Math.exp(-outData[i]))) * 255;
+      bytes[i] = v < 0 ? 0 : v > 255 ? 255 : v | 0;
+    }
+  } else {
+    // minmax: rembg-style per-frame rescale.
+    let omin = Infinity, omax = -Infinity;
+    for (let i = 0; i < outData.length; i++) {
+      if (outData[i] < omin) omin = outData[i];
+      if (outData[i] > omax) omax = outData[i];
+    }
+    const range = Math.max(omax - omin, 1e-6);
+    for (let i = 0; i < outData.length; i++) {
+      const v = ((outData[i] - omin) / range) * 255;
+      bytes[i] = v < 0 ? 0 : v > 255 ? 255 : v | 0;
+    }
   }
   return { data: bytes, w: W, h: H };
 }

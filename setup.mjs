@@ -51,6 +51,10 @@ const MODELS = [
     name: 'modnet.onnx',
     url:  'https://huggingface.co/Xenova/modnet/resolve/main/onnx/model.onnx',
   },
+  // Tried BiRefNet_lite FP16 here — WebGPU EP errors on the decoder's Split_33
+  // node because the op needs 11 storage buffers and consumer adapters expose
+  // only 10 (`maxStorageBuffersPerShaderStage`). WASM fallback at 1024×1024
+  // would take ~30+ s/frame. Removed until a WebGPU-friendlier export exists.
 ];
 
 // onnxruntime-web dist files we vendor alongside the MediaPipe bundle.
