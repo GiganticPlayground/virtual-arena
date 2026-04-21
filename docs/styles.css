@@ -166,6 +166,36 @@ select { background: #222; color: #eee; border: 1px solid #444; padding: 4px 6px
 }
 button.pulse { animation: pulse 1.6s ease-out infinite; }
 
+/* Non-Chromium browser warning. Sits above the preload overlay so users
+   see it on first paint. Dismissal is sticky per localStorage. */
+#browser-warning {
+  position: fixed; top: 0; left: 0; right: 0; z-index: 200;
+  padding: 10px 16px;
+  background: rgba(200, 200, 100, 0.14);
+  border-bottom: 1px solid rgba(200, 200, 100, 0.35);
+  color: #dd9;
+  font-size: 13px;
+  line-height: 1.45;
+  display: flex; align-items: center; gap: 12px;
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+}
+#browser-warning strong { color: #fed; }
+#browser-warning button {
+  margin-left: auto; flex-shrink: 0;
+  background: transparent;
+  border: 1px solid rgba(200, 200, 100, 0.35);
+  color: #dd9;
+  width: 24px; height: 24px;
+  border-radius: 3px;
+  cursor: pointer;
+  font-size: 16px; line-height: 1;
+  padding: 0;
+}
+#browser-warning button:hover {
+  background: rgba(200, 200, 100, 0.12);
+  color: #fed;
+}
+
 /* Foam finger overlay: absolutely-positioned imgs over the stage.
    pointer-events:none so controls remain clickable. */
 #foam-layer {

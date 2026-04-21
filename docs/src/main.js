@@ -18,6 +18,30 @@ import { applyFoam, hideFoamFrom } from './foam.js';
 import { populateArenaSelect, wireArenaSelect, wireBackgroundUpload } from './backgrounds.js';
 import { preload } from './preload.js';
 
+// Browser-compat banner. The ONNX paths need JSPI (Chrome 137+) plus the
+// VideoFrame API, so non-Chromium browsers will crash the worker as soon
+// as the user picks an ONNX model. Warn once, dismissal is sticky via
+// localStorage. navigator.userAgentData is a Chromium-only API so its
+// presence is a reliable "this is Chromium" signal without UA sniffing.
+(function warnIfNotChromium() {
+  let dismissed = false;
+  try { dismissed = localStorage.getItem('va_chrome_warn_dismissed') === '1'; } catch {}
+  if (dismissed) return;
+  if (navigator.userAgentData) return;
+
+  const banner = document.createElement('div');
+  banner.id = 'browser-warning';
+  banner.innerHTML = `
+    <span><strong>Heads up:</strong> this prototype is built for Chrome and has not been tested on other browsers. ONNX model options may fail to load.</span>
+    <button type="button" aria-label="Dismiss">&times;</button>
+  `;
+  document.body.appendChild(banner);
+  banner.querySelector('button').addEventListener('click', () => {
+    try { localStorage.setItem('va_chrome_warn_dismissed', '1'); } catch {}
+    banner.remove();
+  });
+})();
+
 // Transfer canvas control to the worker BEFORE anything else touches it.
 // After this call, the <canvas> element stays in the DOM (CSS layout still
 // applies) but main can no longer getContext or draw on it.
